@@ -18,13 +18,14 @@ type Proxy struct {
 	header string
 	sse    bool
 
-	clnt        *mcp.Client
-	sess        *mcp.ClientSession
-	ir          *mcp.InitializeResult
-	retry       bool
-	toolNames   map[string]struct{}
-	promptNames map[string]struct{}
-	svr         *mcp.Server
+	clnt         *mcp.Client
+	sess         *mcp.ClientSession
+	ir           *mcp.InitializeResult
+	retry        bool
+	toolNames    map[string]struct{}
+	promptNames  map[string]struct{}
+	resourceURIs map[string]struct{}
+	svr          *mcp.Server
 }
 
 func NewProxy(url, apiKey, header string, sse bool) *Proxy {
@@ -43,9 +44,9 @@ func NewProxy(url, apiKey, header string, sse bool) *Proxy {
 			// Capabilities
 			// ElicitationCompleteHandler
 			// ElicitationCompleteHandler
-			ToolListChangedHandler:   prx.toolListChanged,
-			PromptListChangedHandler: prx.promptListChanged,
-			// ResourceListChangedHandler
+			ToolListChangedHandler:     prx.toolListChanged,
+			PromptListChangedHandler:   prx.promptListChanged,
+			ResourceListChangedHandler: prx.resourceListChanged,
 			// ResourceUpdatedHandler
 			// LoggingMessageHandler
 			// ProgressNotificationHandler
@@ -264,6 +265,74 @@ func (prx *Proxy) promptHandler(name string) mcp.PromptHandler {
 	}
 }
 
+func (prx *Proxy) resourceListChanged(ctx context.Context, req *mcp.ResourceListChangedRequest) {
+	slog.Info("resource list changed")
+
+	err := prx.withSession(ctx, prx.updateResources)
+	if err != nil {
+		slog.Error("update resources", slog.String("error", err.Error()))
+		panic(fmt.Sprintf(
+			"unabled to update resources after resource list changed notification: %s", err))
+	}
+}
+
+func (prx *Proxy) updateResources(ctx context.Context, sess *mcp.ClientSession) error {
+	ret, err := sess.ListResources(ctx, nil)
+	if err != nil {
+		slog.Error("list resources", slog.String("error", err.Error()))
+		return err
+	}
+
+	newURIs := map[string]struct{}{}
+	for _, rs := range ret.Resources {
+		newURIs[rs.URI] = struct{}{}
+	}
+
+	var remove []string
+	for uri := range prx.resourceURIs {
+		if _, ok := newURIs[uri]; !ok {
+			remove = append(remove, uri)
+		}
+	}
+	if len(remove) > 0 {
+		prx.svr.RemoveResources(remove...)
+	}
+
+	for _, rs := range ret.Resources {
+		if _, ok := prx.resourceURIs[rs.URI]; ok {
+			continue
+		}
+		prx.svr.AddResource(rs, prx.resourceHandler(rs.URI))
+	}
+
+	prx.resourceURIs = newURIs
+	return nil
+}
+
+func (prx *Proxy) resourceHandler(uri string) mcp.ResourceHandler {
+	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		var ret *mcp.ReadResourceResult
+		err := prx.withSession(ctx,
+			func(ctx context.Context, sess *mcp.ClientSession) error {
+				var err error
+				ret, err = sess.ReadResource(ctx, &mcp.ReadResourceParams{
+					URI: uri,
+				})
+				if err != nil {
+					slog.Error("read resource", slog.String("uri", uri),
+						slog.String("error", err.Error()))
+					return err
+				}
+				return nil
+			})
+
+		if err != nil {
+			return nil, err
+		}
+		return ret, nil
+	}
+}
+
 func (prx *Proxy) initializeResult(ctx context.Context, sess *mcp.ClientSession) error {
 	ir := sess.InitializeResult()
 
@@ -312,7 +381,13 @@ func (prx *Proxy) Run(ctx context.Context, l *slog.Logger, logProto string) erro
 
 	// ir.Capabilities.Completions
 	// ir.Capabilities.Logging
-	// ir.Capabilities.Resources
+
+	if prx.ir.Capabilities.Resources != nil {
+		err := prx.withSession(ctx, prx.updateResources)
+		if err != nil {
+			return err
+		}
+	}
 
 	if prx.ir.Capabilities.Tools != nil {
 		err := prx.withSession(ctx, prx.updateTools)
