@@ -1,10 +1,3 @@
-/*
-To Do:
-- Connect to the server before the client to find out which capabilities to advertise
-
-- If the connection is closed by the server, calls or notifications will return an error wrapping ErrConnectionClosed.
-*/
-
 package proxy
 
 import (
@@ -25,12 +18,13 @@ type Proxy struct {
 	header string
 	sse    bool
 
-	clnt      *mcp.Client
-	sess      *mcp.ClientSession
-	ir        *mcp.InitializeResult
-	retry     bool
-	toolNames map[string]struct{}
-	svr       *mcp.Server
+	clnt        *mcp.Client
+	sess        *mcp.ClientSession
+	ir          *mcp.InitializeResult
+	retry       bool
+	toolNames   map[string]struct{}
+	promptNames map[string]struct{}
+	svr         *mcp.Server
 }
 
 func NewProxy(url, apiKey, header string, sse bool) *Proxy {
@@ -49,8 +43,8 @@ func NewProxy(url, apiKey, header string, sse bool) *Proxy {
 			// Capabilities
 			// ElicitationCompleteHandler
 			// ElicitationCompleteHandler
-			ToolListChangedHandler: prx.toolListChanged,
-			// PromptListChangedHandler
+			ToolListChangedHandler:   prx.toolListChanged,
+			PromptListChangedHandler: prx.promptListChanged,
 			// ResourceListChangedHandler
 			// ResourceUpdatedHandler
 			// LoggingMessageHandler
@@ -200,6 +194,76 @@ func (prx *Proxy) toolHandler(name string) mcp.ToolHandler {
 	}
 }
 
+func (prx *Proxy) promptListChanged(ctx context.Context, req *mcp.PromptListChangedRequest) {
+	slog.Info("prompt list changed")
+
+	err := prx.withSession(ctx, prx.updatePrompts)
+	if err != nil {
+		slog.Error("update prompts", slog.String("error", err.Error()))
+		panic(fmt.Sprintf("unabled to update prompts after prompt list changed notification: %s",
+			err))
+	}
+}
+
+func (prx *Proxy) updatePrompts(ctx context.Context, sess *mcp.ClientSession) error {
+	ret, err := sess.ListPrompts(ctx, nil)
+	if err != nil {
+		slog.Error("list prompts", slog.String("error", err.Error()))
+		return err
+	}
+
+	newNames := map[string]struct{}{}
+	for _, pr := range ret.Prompts {
+		newNames[pr.Name] = struct{}{}
+	}
+
+	var remove []string
+	for name := range prx.promptNames {
+		if _, ok := newNames[name]; !ok {
+			remove = append(remove, name)
+		}
+	}
+	if len(remove) > 0 {
+		prx.svr.RemovePrompts(remove...)
+	}
+
+	for _, pr := range ret.Prompts {
+		if _, ok := prx.promptNames[pr.Name]; ok {
+			continue
+		}
+		prx.svr.AddPrompt(pr, prx.promptHandler(pr.Name))
+	}
+
+	prx.promptNames = newNames
+	return nil
+}
+
+func (prx *Proxy) promptHandler(name string) mcp.PromptHandler {
+	return func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		var ret *mcp.GetPromptResult
+		err := prx.withSession(ctx,
+			func(ctx context.Context, sess *mcp.ClientSession) error {
+				var err error
+				ret, err = sess.GetPrompt(ctx, &mcp.GetPromptParams{
+					Name:      name,
+					Arguments: req.Params.Arguments,
+				})
+				if err != nil {
+					slog.Error("get prompt", slog.String("name", name),
+						slog.Any("args", req.Params.Arguments),
+						slog.String("error", err.Error()))
+					return err
+				}
+				return nil
+			})
+
+		if err != nil {
+			return nil, err
+		}
+		return ret, nil
+	}
+}
+
 func (prx *Proxy) initializeResult(ctx context.Context, sess *mcp.ClientSession) error {
 	ir := sess.InitializeResult()
 
@@ -248,11 +312,17 @@ func (prx *Proxy) Run(ctx context.Context, l *slog.Logger, logProto string) erro
 
 	// ir.Capabilities.Completions
 	// ir.Capabilities.Logging
-	// ir.Capabilities.Prompts
 	// ir.Capabilities.Resources
+
 	if prx.ir.Capabilities.Tools != nil {
-		// prx.toolNames = map[string]struct{}{}
 		err := prx.withSession(ctx, prx.updateTools)
+		if err != nil {
+			return err
+		}
+	}
+
+	if prx.ir.Capabilities.Prompts != nil {
+		err := prx.withSession(ctx, prx.updatePrompts)
 		if err != nil {
 			return err
 		}
@@ -260,81 +330,3 @@ func (prx *Proxy) Run(ctx context.Context, l *slog.Logger, logProto string) erro
 
 	return prx.svr.Run(ctx, setupTransport(logProto, &mcp.StdioTransport{}))
 }
-
-/*
-func (p *Proxy) registerResources(ctx context.Context) error {
-	session, err := p.getSession(ctx)
-	if err != nil {
-		return err
-	}
-
-	resources, err := session.ListResources(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	for _, res := range resources.Resources {
-		r := res
-		p.server.AddResource(&r, p.makeResourceHandler(r.URI))
-	}
-	log.Printf("Registered %d resources", len(resources.Resources))
-	return nil
-}
-
-func (p *Proxy) makeResourceHandler(uri string) mcp.ResourceHandler {
-	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		session, err := p.getSession(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		result, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
-		if err != nil {
-			if reconnErr := p.reconnect(ctx); reconnErr != nil {
-				return nil, fmt.Errorf("read failed and reconnect failed: %w", err)
-			}
-			session, _ = p.getSession(ctx)
-			result, err = session.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
-		}
-		return result, err
-	}
-}
-
-func (p *Proxy) registerPrompts(ctx context.Context) error {
-	session, err := p.getSession(ctx)
-	if err != nil {
-		return err
-	}
-
-	prompts, err := session.ListPrompts(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	for _, prompt := range prompts.Prompts {
-		pr := prompt
-		p.server.AddPrompt(&pr, p.makePromptHandler(pr.Name))
-	}
-	log.Printf("Registered %d prompts", len(prompts.Prompts))
-	return nil
-}
-
-func (p *Proxy) makePromptHandler(name string) mcp.PromptHandler {
-	return func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		session, err := p.getSession(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		result, err := session.GetPrompt(ctx, &mcp.GetPromptParams{Name: name, Arguments: req.Params.Arguments})
-		if err != nil {
-			if reconnErr := p.reconnect(ctx); reconnErr != nil {
-				return nil, fmt.Errorf("get prompt failed and reconnect failed: %w", err)
-			}
-			session, _ = p.getSession(ctx)
-			result, err = session.GetPrompt(ctx, &mcp.GetPromptParams{Name: name, Arguments: req.Params.Arguments})
-		}
-		return result, err
-	}
-}
-*/
