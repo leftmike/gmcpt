@@ -119,6 +119,13 @@ func (prx *Proxy) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(req)
 }
 
+func (prx *Proxy) Close() {
+	if prx.sess != nil {
+		prx.sess.Close()
+		prx.sess = nil
+	}
+}
+
 func (prx *Proxy) toolListChanged(ctx context.Context, req *mcp.ToolListChangedRequest) {
 	slog.Info("tool list changed")
 
@@ -177,6 +184,8 @@ func (prx *Proxy) toolHandler(name string) mcp.ToolHandler {
 						return err
 					}
 				}
+
+				slog.Info("call tool", slog.String("name", name), slog.Any("args", args))
 
 				var err error
 				ret, err = sess.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
@@ -349,25 +358,26 @@ func (prx *Proxy) initializeResult(ctx context.Context, sess *mcp.ClientSession)
 	return nil
 }
 
-func setupTransport(logProto string, t mcp.Transport) mcp.Transport {
+func (prx *Proxy) Run(ctx context.Context, l *slog.Logger, logProto string) error {
+	t := mcp.Transport(&mcp.StdioTransport{})
+
 	if logProto != "" {
 		file, err := os.OpenFile(logProto, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
+		if err == nil {
+			t = &mcp.LoggingTransport{
+				Transport: t,
+				Writer:    file,
+			}
+		} else {
 			slog.Error("open file", slog.String("logproto", logProto),
 				slog.String("error", err.Error()))
-			return t
-		}
-
-		return &mcp.LoggingTransport{
-			Transport: t,
-			Writer:    file,
 		}
 	}
 
-	return t
+	return prx.run(ctx, l, t)
 }
 
-func (prx *Proxy) Run(ctx context.Context, l *slog.Logger, logProto string) error {
+func (prx *Proxy) run(ctx context.Context, l *slog.Logger, t mcp.Transport) error {
 	err := prx.withSession(ctx, prx.initializeResult)
 	if err != nil {
 		return err
@@ -403,5 +413,5 @@ func (prx *Proxy) Run(ctx context.Context, l *slog.Logger, logProto string) erro
 		}
 	}
 
-	return prx.svr.Run(ctx, setupTransport(logProto, &mcp.StdioTransport{}))
+	return prx.svr.Run(ctx, t)
 }
