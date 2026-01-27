@@ -40,6 +40,42 @@ func newTestMCPServer() *mcpsvr.MCPServer {
 	return tsvr
 }
 
+func newTestMCPServerWithPrompts() *mcpsvr.MCPServer {
+	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0",
+		mcpsvr.WithPromptCapabilities(true))
+
+	tsvr.AddPrompt(mcpgo.NewPrompt("greet",
+		mcpgo.WithPromptDescription("generates a greeting"),
+		mcpgo.WithArgument("name",
+			mcpgo.ArgumentDescription("name to greet"),
+			mcpgo.RequiredArgument(),
+		)),
+		func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
+			name := req.Params.Arguments["name"]
+			return mcpgo.NewGetPromptResult(
+				"a greeting message",
+				[]mcpgo.PromptMessage{
+					mcpgo.NewPromptMessage(mcpgo.RoleUser,
+						mcpgo.NewTextContent(fmt.Sprintf("Hello, %s!", name))),
+				},
+			), nil
+		})
+
+	tsvr.AddPrompt(mcpgo.NewPrompt("help",
+		mcpgo.WithPromptDescription("shows help information")),
+		func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
+			return mcpgo.NewGetPromptResult(
+				"help information",
+				[]mcpgo.PromptMessage{
+					mcpgo.NewPromptMessage(mcpgo.RoleAssistant,
+						mcpgo.NewTextContent("This is the help message.")),
+				},
+			), nil
+		})
+
+	return tsvr
+}
+
 type testProxyFunc func(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 	tsvr *mcpsvr.MCPServer)
 
@@ -129,7 +165,7 @@ func testToolCall(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 	}
 }
 
-func TestProxySSE(t *testing.T) {
+func TestProxyToolSSE(t *testing.T) {
 	tsvr := newTestMCPServer()
 	svr := httptest.NewServer(mcpsvr.NewSSEServer(tsvr))
 	defer svr.Close()
@@ -139,7 +175,7 @@ func TestProxySSE(t *testing.T) {
 	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testToolCall)
 }
 
-func TestProxyStreamableHTTP(t *testing.T) {
+func TestProxyToolHTTP(t *testing.T) {
 	tsvr := newTestMCPServer()
 	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
 	defer svr.Close()
@@ -147,4 +183,119 @@ func TestProxyStreamableHTTP(t *testing.T) {
 	fmt.Println("streamable http server url:", svr.URL)
 
 	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testToolCall)
+}
+
+func testPromptList(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer) {
+
+	lst, err := clnt.ListPrompts(ctx, mcpgo.ListPromptsRequest{})
+	if err != nil {
+		t.Errorf("ListPrompts() failed with %s", err)
+		return
+	}
+
+	if len(lst.Prompts) != 2 {
+		t.Errorf("ListPrompts() got %d want 2", len(lst.Prompts))
+		return
+	}
+
+	var greet, help bool
+	for _, p := range lst.Prompts {
+		switch p.Name {
+		case "greet":
+			greet = true
+		case "help":
+			help = true
+		default:
+			t.Errorf("ListPrompts() unexpected prompt: %s", p.Name)
+		}
+	}
+
+	if !greet {
+		t.Errorf("ListPrompts() missing greet prompt")
+	}
+	if !help {
+		t.Errorf("ListPrompts() missing help prompt")
+	}
+}
+
+func testPromptGet(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer) {
+
+	ret, err := clnt.GetPrompt(ctx, mcpgo.GetPromptRequest{
+		Request: mcpgo.Request{Method: "prompts/get"},
+		Params: mcpgo.GetPromptParams{
+			Name:      "greet",
+			Arguments: map[string]string{"name": "World"},
+		},
+	})
+	if err != nil {
+		t.Errorf("GetPrompt(greet) failed with %s", err)
+	} else if len(ret.Messages) == 0 {
+		t.Errorf("GetPrompt(greet) missing messages")
+	} else {
+		tc, ok := ret.Messages[0].Content.(mcpgo.TextContent)
+		if !ok {
+			t.Errorf("GetPrompt(greet) expected TextContent, got %T: %#v",
+				ret.Messages[0].Content, ret.Messages[0].Content)
+		} else {
+			expected := "Hello, World!"
+			if tc.Text != expected {
+				t.Errorf("GetPrompt(greet) expected %q got %q", expected, tc.Text)
+			}
+			if ret.Messages[0].Role != mcpgo.RoleUser {
+				t.Errorf("GetPrompt(greet) expected role %q got %q", mcpgo.RoleUser,
+					ret.Messages[0].Role)
+			}
+		}
+	}
+
+	ret, err = clnt.GetPrompt(ctx, mcpgo.GetPromptRequest{
+		Request: mcpgo.Request{Method: "prompts/get"},
+		Params: mcpgo.GetPromptParams{
+			Name: "help",
+		},
+	})
+	if err != nil {
+		t.Errorf("GetPrompt(help) failed with %s", err)
+	} else if len(ret.Messages) == 0 {
+		t.Errorf("GetPrompt(help) missing messages")
+	} else {
+		tc, ok := ret.Messages[0].Content.(mcpgo.TextContent)
+		if !ok {
+			t.Errorf("GetPrompt(help) expected TextContent, got %T: %#v",
+				ret.Messages[0].Content, ret.Messages[0].Content)
+		} else {
+			expected := "This is the help message."
+			if tc.Text != expected {
+				t.Errorf("GetPrompt(help) expected %q got %q", expected, tc.Text)
+			}
+			if ret.Messages[0].Role != mcpgo.RoleAssistant {
+				t.Errorf("GetPrompt(help) expected role %q got %q", mcpgo.RoleAssistant,
+					ret.Messages[0].Role)
+			}
+		}
+	}
+}
+
+func TestProxyPromptsSSE(t *testing.T) {
+	tsvr := newTestMCPServerWithPrompts()
+	svr := httptest.NewServer(mcpsvr.NewSSEServer(tsvr))
+	defer svr.Close()
+
+	fmt.Println("sse server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testPromptList)
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testPromptGet)
+}
+
+func TestProxyPromptsHTTP(t *testing.T) {
+	tsvr := newTestMCPServerWithPrompts()
+	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
+	defer svr.Close()
+
+	fmt.Println("streamable http server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testPromptList)
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testPromptGet)
 }
