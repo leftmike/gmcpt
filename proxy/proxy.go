@@ -123,6 +123,9 @@ func (prx *Proxy) Close() {
 		prx.sess.Close()
 		prx.sess = nil
 	}
+	for sess := range prx.svr.Sessions() {
+		sess.Close()
+	}
 }
 
 func (prx *Proxy) toolListChanged(ctx context.Context, req *mcp.ToolListChangedRequest) {

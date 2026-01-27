@@ -50,6 +50,12 @@ func testProxy(t *testing.T, prx *Proxy, tsvr *mcpsvr.MCPServer, testFunc testPr
 	prxReader, clntWriter := io.Pipe()
 	// Test Client <- Proxy
 	clntReader, prxWriter := io.Pipe()
+	defer func() {
+		prxReader.Close()
+		clntWriter.Close()
+		clntReader.Close()
+		prxWriter.Close()
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -83,13 +89,7 @@ func testProxy(t *testing.T, prx *Proxy, tsvr *mcpsvr.MCPServer, testFunc testPr
 
 	testFunc(t, ctx, clnt, tsvr)
 
-	// XXX: use defer?
 	prx.Close()
-	clntWriter.Close()
-	prxWriter.Close()
-	clntReader.Close()
-	prxReader.Close()
-	cancel()
 }
 
 func testToolCall(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
