@@ -159,7 +159,7 @@ func testToolCall(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 		} else {
 			expected := "echo: hello world"
 			if tc.Text != expected {
-				t.Fatalf("CallTool(echo) expected %s got %s", expected, tc.Text)
+				t.Fatalf("CallTool(echo) got %s want %s", tc.Text, expected)
 			}
 		}
 	}
@@ -236,11 +236,11 @@ func testPromptGet(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 		} else {
 			expected := "Hello, World!"
 			if tc.Text != expected {
-				t.Errorf("GetPrompt(greet) expected %q got %q", expected, tc.Text)
+				t.Errorf("GetPrompt(greet) got %q want %q", tc.Text, expected)
 			}
 			if ret.Messages[0].Role != mcpgo.RoleUser {
-				t.Errorf("GetPrompt(greet) expected role %q got %q", mcpgo.RoleUser,
-					ret.Messages[0].Role)
+				t.Errorf("GetPrompt(greet) role got %q want %q", ret.Messages[0].Role,
+					mcpgo.RoleUser)
 			}
 		}
 	}
@@ -263,11 +263,11 @@ func testPromptGet(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 		} else {
 			expected := "This is the help message."
 			if tc.Text != expected {
-				t.Errorf("GetPrompt(help) expected %q got %q", expected, tc.Text)
+				t.Errorf("GetPrompt(help) got %q want %q", tc.Text, expected)
 			}
 			if ret.Messages[0].Role != mcpgo.RoleAssistant {
-				t.Errorf("GetPrompt(help) expected role %q got %q", mcpgo.RoleAssistant,
-					ret.Messages[0].Role)
+				t.Errorf("GetPrompt(help) role got %q want %q", ret.Messages[0].Role,
+					mcpgo.RoleAssistant)
 			}
 		}
 	}
@@ -388,11 +388,11 @@ func testResourceRead(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 		} else {
 			expected := `{"version": "1.0", "debug": true}`
 			if tc.Text != expected {
-				t.Errorf("ReadResource(config.json) expected %q got %q", expected, tc.Text)
+				t.Errorf("ReadResource(config.json) got %q want %q", tc.Text, expected)
 			}
 			if tc.URI != "file:///config.json" {
-				t.Errorf("ReadResource(config.json) URI expected %q got %q",
-					"file:///config.json", tc.URI)
+				t.Errorf("ReadResource(config.json) URI got %q want %q",
+					tc.URI, "file:///config.json")
 			}
 		}
 	}
@@ -415,7 +415,7 @@ func testResourceRead(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 		} else {
 			expected := "Welcome to the project!"
 			if tc.Text != expected {
-				t.Errorf("ReadResource(readme.txt) expected %q got %q", expected, tc.Text)
+				t.Errorf("ReadResource(readme.txt) got %q want %q", tc.Text, expected)
 			}
 		}
 	}
