@@ -20,7 +20,7 @@ func init() {
 	slog.SetLogLoggerLevel(slog.LevelError)
 }
 
-func newTestMCPServer() *mcpsvr.MCPServer {
+func newToolsMCPServer() *mcpsvr.MCPServer {
 	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0", mcpsvr.WithToolCapabilities(true))
 
 	echoTool := mcpgo.NewTool("echo",
@@ -40,7 +40,7 @@ func newTestMCPServer() *mcpsvr.MCPServer {
 	return tsvr
 }
 
-func newTestMCPServerWithPrompts() *mcpsvr.MCPServer {
+func newPromptsMCPServer() *mcpsvr.MCPServer {
 	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0",
 		mcpsvr.WithPromptCapabilities(true))
 
@@ -166,7 +166,7 @@ func testToolCall(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 }
 
 func TestProxyToolSSE(t *testing.T) {
-	tsvr := newTestMCPServer()
+	tsvr := newToolsMCPServer()
 	svr := httptest.NewServer(mcpsvr.NewSSEServer(tsvr))
 	defer svr.Close()
 
@@ -176,7 +176,7 @@ func TestProxyToolSSE(t *testing.T) {
 }
 
 func TestProxyToolHTTP(t *testing.T) {
-	tsvr := newTestMCPServer()
+	tsvr := newToolsMCPServer()
 	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
 	defer svr.Close()
 
@@ -191,31 +191,26 @@ func testPromptList(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 	lst, err := clnt.ListPrompts(ctx, mcpgo.ListPromptsRequest{})
 	if err != nil {
 		t.Errorf("ListPrompts() failed with %s", err)
-		return
-	}
-
-	if len(lst.Prompts) != 2 {
+	} else if len(lst.Prompts) != 2 {
 		t.Errorf("ListPrompts() got %d want 2", len(lst.Prompts))
-		return
-	}
-
-	var greet, help bool
-	for _, p := range lst.Prompts {
-		switch p.Name {
-		case "greet":
-			greet = true
-		case "help":
-			help = true
-		default:
-			t.Errorf("ListPrompts() unexpected prompt: %s", p.Name)
+	} else {
+		var greet, help bool
+		for _, p := range lst.Prompts {
+			switch p.Name {
+			case "greet":
+				greet = true
+			case "help":
+				help = true
+			default:
+				t.Errorf("ListPrompts() unexpected prompt: %s", p.Name)
+			}
 		}
-	}
-
-	if !greet {
-		t.Errorf("ListPrompts() missing greet prompt")
-	}
-	if !help {
-		t.Errorf("ListPrompts() missing help prompt")
+		if !greet {
+			t.Errorf("ListPrompts() missing greet prompt")
+		}
+		if !help {
+			t.Errorf("ListPrompts() missing help prompt")
+		}
 	}
 }
 
@@ -279,7 +274,7 @@ func testPromptGet(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 }
 
 func TestProxyPromptsSSE(t *testing.T) {
-	tsvr := newTestMCPServerWithPrompts()
+	tsvr := newPromptsMCPServer()
 	svr := httptest.NewServer(mcpsvr.NewSSEServer(tsvr))
 	defer svr.Close()
 
@@ -290,7 +285,7 @@ func TestProxyPromptsSSE(t *testing.T) {
 }
 
 func TestProxyPromptsHTTP(t *testing.T) {
-	tsvr := newTestMCPServerWithPrompts()
+	tsvr := newPromptsMCPServer()
 	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
 	defer svr.Close()
 
@@ -298,4 +293,152 @@ func TestProxyPromptsHTTP(t *testing.T) {
 
 	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testPromptList)
 	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testPromptGet)
+}
+
+func newResourcesMCPServer() *mcpsvr.MCPServer {
+	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0",
+		mcpsvr.WithResourceCapabilities(false, true))
+
+	tsvr.AddResource(
+		mcpgo.NewResource("file:///config.json", "config.json",
+			mcpgo.WithResourceDescription("Application configuration file"),
+			mcpgo.WithMIMEType("application/json")),
+		func(ctx context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents,
+			error) {
+
+			return []mcpgo.ResourceContents{
+				mcpgo.TextResourceContents{
+					URI:      "file:///config.json",
+					MIMEType: "application/json",
+					Text:     `{"version": "1.0", "debug": true}`,
+				},
+			}, nil
+		})
+
+	tsvr.AddResource(
+		mcpgo.NewResource("file:///readme.txt", "readme.txt",
+			mcpgo.WithResourceDescription("Project readme")),
+		func(ctx context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents,
+			error) {
+
+			return []mcpgo.ResourceContents{
+				mcpgo.TextResourceContents{
+					URI:  "file:///readme.txt",
+					Text: "Welcome to the project!",
+				},
+			}, nil
+		})
+
+	return tsvr
+}
+
+func testResourceList(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer) {
+
+	lst, err := clnt.ListResources(ctx, mcpgo.ListResourcesRequest{})
+	if err != nil {
+		t.Errorf("ListResources() failed with %s", err)
+	} else if len(lst.Resources) != 2 {
+		t.Errorf("ListResources() got %d want 2", len(lst.Resources))
+	} else {
+		var config, readme bool
+		for _, r := range lst.Resources {
+			switch r.URI {
+			case "file:///config.json":
+				config = true
+				if r.Name != "config.json" {
+					t.Errorf("ListResources() config.json name got %s want config.json", r.Name)
+				}
+			case "file:///readme.txt":
+				readme = true
+				if r.Name != "readme.txt" {
+					t.Errorf("ListResources() readme.txt name got %q want readme.txt", r.Name)
+				}
+			default:
+				t.Errorf("ListResources() unexpected resource: %s", r.URI)
+			}
+		}
+		if !config {
+			t.Errorf("ListResources() missing config.json resource")
+		}
+		if !readme {
+			t.Errorf("ListResources() missing readme.txt resource")
+		}
+	}
+}
+
+func testResourceRead(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer) {
+
+	ret, err := clnt.ReadResource(ctx, mcpgo.ReadResourceRequest{
+		Request: mcpgo.Request{Method: "resources/read"},
+		Params: mcpgo.ReadResourceParams{
+			URI: "file:///config.json",
+		},
+	})
+	if err != nil {
+		t.Errorf("ReadResource(config.json) failed with %s", err)
+	} else if len(ret.Contents) == 0 {
+		t.Errorf("ReadResource(config.json) missing contents")
+	} else {
+		tc, ok := mcpgo.AsTextResourceContents(ret.Contents[0])
+		if !ok {
+			t.Errorf("ReadResource(config.json) expected TextResourceContents, got %T: %#v",
+				ret.Contents[0], ret.Contents[0])
+		} else {
+			expected := `{"version": "1.0", "debug": true}`
+			if tc.Text != expected {
+				t.Errorf("ReadResource(config.json) expected %q got %q", expected, tc.Text)
+			}
+			if tc.URI != "file:///config.json" {
+				t.Errorf("ReadResource(config.json) URI expected %q got %q",
+					"file:///config.json", tc.URI)
+			}
+		}
+	}
+
+	ret, err = clnt.ReadResource(ctx, mcpgo.ReadResourceRequest{
+		Request: mcpgo.Request{Method: "resources/read"},
+		Params: mcpgo.ReadResourceParams{
+			URI: "file:///readme.txt",
+		},
+	})
+	if err != nil {
+		t.Errorf("ReadResource(readme.txt) failed with %s", err)
+	} else if len(ret.Contents) == 0 {
+		t.Errorf("ReadResource(readme.txt) missing contents")
+	} else {
+		tc, ok := mcpgo.AsTextResourceContents(ret.Contents[0])
+		if !ok {
+			t.Errorf("ReadResource(readme.txt) expected TextResourceContents, got %T: %#v",
+				ret.Contents[0], ret.Contents[0])
+		} else {
+			expected := "Welcome to the project!"
+			if tc.Text != expected {
+				t.Errorf("ReadResource(readme.txt) expected %q got %q", expected, tc.Text)
+			}
+		}
+	}
+}
+
+func TestProxyResourcesSSE(t *testing.T) {
+	tsvr := newResourcesMCPServer()
+	svr := httptest.NewServer(mcpsvr.NewSSEServer(tsvr))
+	defer svr.Close()
+
+	fmt.Println("sse server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testResourceList)
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testResourceRead)
+}
+
+func TestProxyResourcesHTTP(t *testing.T) {
+	tsvr := newResourcesMCPServer()
+	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
+	defer svr.Close()
+
+	fmt.Println("streamable http server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResourceList)
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResourceRead)
 }
