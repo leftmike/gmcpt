@@ -88,8 +88,7 @@ func (prx *Proxy) withSession(ctx context.Context,
 				return err
 			}
 
-			slog.Info("with session", slog.Duration("backoff", backoff),
-				slog.String("error", err.Error()))
+			slog.Info("with session", "backoff", backoff, "error", err.Error())
 
 			select {
 			case <-ctx.Done():
@@ -131,7 +130,7 @@ func (prx *Proxy) toolListChanged(ctx context.Context, req *mcp.ToolListChangedR
 
 	err := prx.withSession(ctx, prx.updateTools)
 	if err != nil {
-		slog.Error("update tools", slog.String("error", err.Error()))
+		slog.Error("update tools", "error", err.Error())
 		panic(fmt.Sprintf("unabled to update tools after tool list changed notification: %s", err))
 	}
 }
@@ -139,7 +138,7 @@ func (prx *Proxy) toolListChanged(ctx context.Context, req *mcp.ToolListChangedR
 func (prx *Proxy) updateTools(ctx context.Context, sess *mcp.ClientSession) error {
 	ret, err := sess.ListTools(ctx, nil)
 	if err != nil {
-		slog.Error("list tools", slog.String("error", err.Error()))
+		slog.Error("list tools", "error", err.Error())
 		return err
 	}
 
@@ -178,20 +177,18 @@ func (prx *Proxy) toolHandler(name string) mcp.ToolHandler {
 				if len(req.Params.Arguments) > 0 {
 					err := json.Unmarshal(req.Params.Arguments, &args)
 					if err != nil {
-						slog.Error("json unmarshal", slog.String("name", name),
-							slog.Any("args", req.Params.Arguments),
-							slog.String("error", err.Error()))
+						slog.Error("json unmarshal", "name", name, "args", req.Params.Arguments,
+							"error", err.Error())
 						return err
 					}
 				}
 
-				slog.Info("call tool", slog.String("name", name), slog.Any("args", args))
+				slog.Info("call tool", "name", name, "args", args)
 
 				var err error
 				ret, err = sess.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 				if err != nil {
-					slog.Error("call tool", slog.String("name", name), slog.Any("args", args),
-						slog.String("error", err.Error()))
+					slog.Error("call tool", "name", name, "args", args, "error", err)
 					return err
 				}
 				return nil
@@ -209,7 +206,7 @@ func (prx *Proxy) promptListChanged(ctx context.Context, req *mcp.PromptListChan
 
 	err := prx.withSession(ctx, prx.updatePrompts)
 	if err != nil {
-		slog.Error("update prompts", slog.String("error", err.Error()))
+		slog.Error("update prompts", "error", err)
 		panic(fmt.Sprintf("unabled to update prompts after prompt list changed notification: %s",
 			err))
 	}
@@ -218,7 +215,7 @@ func (prx *Proxy) promptListChanged(ctx context.Context, req *mcp.PromptListChan
 func (prx *Proxy) updatePrompts(ctx context.Context, sess *mcp.ClientSession) error {
 	ret, err := sess.ListPrompts(ctx, nil)
 	if err != nil {
-		slog.Error("list prompts", slog.String("error", err.Error()))
+		slog.Error("list prompts", "error", err)
 		return err
 	}
 
@@ -259,9 +256,8 @@ func (prx *Proxy) promptHandler(name string) mcp.PromptHandler {
 					Arguments: req.Params.Arguments,
 				})
 				if err != nil {
-					slog.Error("get prompt", slog.String("name", name),
-						slog.Any("args", req.Params.Arguments),
-						slog.String("error", err.Error()))
+					slog.Error("get prompt", "name", name, "args", req.Params.Arguments,
+						"error", err)
 					return err
 				}
 				return nil
@@ -279,7 +275,7 @@ func (prx *Proxy) resourceListChanged(ctx context.Context, req *mcp.ResourceList
 
 	err := prx.withSession(ctx, prx.updateResources)
 	if err != nil {
-		slog.Error("update resources", slog.String("error", err.Error()))
+		slog.Error("update resources", "error", err)
 		panic(fmt.Sprintf(
 			"unabled to update resources after resource list changed notification: %s", err))
 	}
@@ -288,7 +284,7 @@ func (prx *Proxy) resourceListChanged(ctx context.Context, req *mcp.ResourceList
 func (prx *Proxy) updateResources(ctx context.Context, sess *mcp.ClientSession) error {
 	ret, err := sess.ListResources(ctx, nil)
 	if err != nil {
-		slog.Error("list resources", slog.String("error", err.Error()))
+		slog.Error("list resources", "error", err)
 		return err
 	}
 
@@ -328,8 +324,7 @@ func (prx *Proxy) resourceHandler(uri string) mcp.ResourceHandler {
 					URI: uri,
 				})
 				if err != nil {
-					slog.Error("read resource", slog.String("uri", uri),
-						slog.String("error", err.Error()))
+					slog.Error("read resource", "uri", uri, "error", err)
 					return err
 				}
 				return nil
@@ -345,13 +340,10 @@ func (prx *Proxy) resourceHandler(uri string) mcp.ResourceHandler {
 func (prx *Proxy) initializeResult(ctx context.Context, sess *mcp.ClientSession) error {
 	ir := sess.InitializeResult()
 
-	slog.Info("initialize result", slog.Any("capabilities", ir.Capabilities),
-		slog.String("instructions", ir.Instructions),
-		slog.String("protocol_version", ir.ProtocolVersion),
-		slog.String("server_name", ir.ServerInfo.Name),
-		slog.String("server_title", ir.ServerInfo.Title),
-		slog.String("server_version", ir.ServerInfo.Version),
-		slog.String("server_website", ir.ServerInfo.WebsiteURL))
+	slog.Info("initialize result", "capabilities", ir.Capabilities,
+		"instructions", ir.Instructions, "protocol_version", ir.ProtocolVersion,
+		"server_name", ir.ServerInfo.Name, "server_title", ir.ServerInfo.Title,
+		"server_version", ir.ServerInfo.Version, "server_website", ir.ServerInfo.WebsiteURL)
 
 	prx.ir = ir
 	prx.retry = true
@@ -369,8 +361,7 @@ func (prx *Proxy) Run(ctx context.Context, l *slog.Logger, logProto string) erro
 				Writer:    file,
 			}
 		} else {
-			slog.Error("open file", slog.String("logproto", logProto),
-				slog.String("error", err.Error()))
+			slog.Error("open file", "logproto", logProto, "error", err)
 		}
 	}
 

@@ -18,13 +18,6 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-type discardHandler struct{}
-
-func (discardHandler) Enabled(context.Context, slog.Level) bool  { return false }
-func (discardHandler) Handle(context.Context, slog.Record) error { return nil }
-func (dh discardHandler) WithAttrs([]slog.Attr) slog.Handler     { return dh }
-func (dh discardHandler) WithGroup(string) slog.Handler          { return dh }
-
 func setupLogging(log bool, logfile string) *slog.Logger {
 	var l *slog.Logger
 	if log {
@@ -40,7 +33,7 @@ func setupLogging(log bool, logfile string) *slog.Logger {
 			l = slog.New(slog.NewTextHandler(os.Stderr, nil))
 		}
 	} else {
-		l = slog.New(discardHandler{})
+		l = slog.New(slog.DiscardHandler)
 	}
 
 	slog.SetDefault(l)
@@ -66,8 +59,8 @@ func proxyCmd() {
 	}
 
 	l := setupLogging(log, logfile)
-	slog.Info("starting", slog.String("cmd", os.Args[0]+os.Args[1]),
-		slog.String("args", strings.Join(os.Args[2:], " ")), slog.Int("pid", os.Getpid()))
+	slog.Info("starting", "cmd", os.Args[0]+os.Args[1], "args", strings.Join(os.Args[2:], " "),
+		"pid", os.Getpid())
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -77,8 +70,8 @@ func proxyCmd() {
 		fatal(err)
 	}
 
-	slog.Info("exiting", slog.String("cmd", os.Args[0]+os.Args[1]),
-		slog.String("args", strings.Join(os.Args[2:], " ")), slog.Int("pid", os.Getpid()))
+	slog.Info("exiting", "cmd", os.Args[0]+os.Args[1], "args", strings.Join(os.Args[2:], " "),
+		"pid", os.Getpid())
 }
 
 func usage() {
