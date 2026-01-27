@@ -9,120 +9,124 @@ import (
 	"testing"
 	"time"
 
+	mcpclnt "github.com/mark3labs/mcp-go/client"
+	mcptransport "github.com/mark3labs/mcp-go/client/transport"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	mcpsvr "github.com/mark3labs/mcp-go/server"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func init() {
+	slog.SetLogLoggerLevel(slog.LevelError)
+}
+
 func newTestMCPServer() *mcpsvr.MCPServer {
 	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0", mcpsvr.WithToolCapabilities(true))
 
 	echoTool := mcpgo.NewTool("echo",
-		mcpgo.WithDescription("Echoes back the input"),
+		mcpgo.WithDescription("echoes back the input"),
 		mcpgo.WithString("message",
 			mcpgo.Required(),
-			mcpgo.Description("Message to echo"),
+			mcpgo.Description("message to echo"),
 		),
 	)
 
 	tsvr.AddTool(echoTool,
 		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 			msg := req.GetString("message", "")
-			return mcpgo.NewToolResultText(fmt.Sprintf("Echo: %s", msg)), nil
+			return mcpgo.NewToolResultText(fmt.Sprintf("echo: %s", msg)), nil
 		})
 
 	return tsvr
 }
 
-// type testProxyFunc func(t *testing.T, ctx context.Context) //, sess XXX, tsvr *mcpsvr.MCPServer)
+type testProxyFunc func(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer)
 
-func testProxy(t *testing.T, prx *Proxy, tsvr *mcpsvr.MCPServer) { //, testFunc testProxyFunc) {
+func testProxy(t *testing.T, prx *Proxy, tsvr *mcpsvr.MCPServer, testFunc testProxyFunc) {
+	// Test Client <-> Proxy <-> Test Server
+
+	// Test Client -> Proxy
+	prxReader, clntWriter := io.Pipe()
+	// Test Client <- Proxy
+	clntReader, prxWriter := io.Pipe()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Create pipes for the proxy's stdio transport
-	clientReader, proxyWriter := io.Pipe()
-	proxyReader, clientWriter := io.Pipe()
-
-	// Create IOTransport for the proxy (reads from proxyReader, writes to proxyWriter)
-	proxyTransport := &mcp.IOTransport{
-		Reader: proxyReader,
-		Writer: proxyWriter,
-	}
-
-	// Run the proxy in a goroutine
 	go func() {
-		prx.run(ctx, slog.Default(), proxyTransport)
+		err := prx.run(ctx, slog.Default(), &mcp.IOTransport{Reader: prxReader, Writer: prxWriter})
+		if err != nil && ctx.Err() == nil {
+			t.Fatalf("proxy.run() failed with %s", err)
+		}
 	}()
 
-	// Create IOTransport for the client (reads from clientReader, writes to clientWriter)
-	clientTransport := &mcp.IOTransport{
-		Reader: clientReader,
-		Writer: clientWriter,
-	}
-
-	client := mcp.NewClient(
-		&mcp.Implementation{Name: "test-client", Version: "0.1.0"},
-		nil,
-	)
-
-	sess, err := client.Connect(ctx, clientTransport, nil)
+	clnt := mcpclnt.NewClient(mcptransport.NewIO(clntReader, clntWriter, nil))
+	err := clnt.Start(ctx)
 	if err != nil {
-		t.Fatalf("Failed to connect client to proxy: %v", err)
+		t.Fatalf("client.NewClient() failed with %s", err)
 	}
-	defer sess.Close()
+	defer clnt.Close()
 
-	t.Log("Client connected to proxy successfully")
-
-	// List tools through the proxy
-	toolsResult, err := sess.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatalf("Failed to list tools: %v", err)
-	}
-
-	if len(toolsResult.Tools) != 1 {
-		t.Fatalf("Expected 1 tool, got %d", len(toolsResult.Tools))
-	}
-
-	if toolsResult.Tools[0].Name != "echo" {
-		t.Fatalf("Expected tool 'echo', got '%s'", toolsResult.Tools[0].Name)
-	}
-
-	t.Logf("Found tool: %s", toolsResult.Tools[0].Name)
-
-	// Call the echo tool through the proxy
-	callResult, err := sess.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "echo",
-		Arguments: map[string]any{"message": "hello world"},
+	_, err = clnt.Initialize(ctx, mcpgo.InitializeRequest{
+		Params: mcpgo.InitializeParams{
+			ProtocolVersion: mcpgo.LATEST_PROTOCOL_VERSION,
+			ClientInfo: mcpgo.Implementation{
+				Name:    "test-client",
+				Version: "0.1.0",
+			},
+		},
 	})
 	if err != nil {
-		t.Fatalf("Failed to call tool: %v", err)
+		t.Fatalf("client.Initialize() failed with %s", err)
 	}
 
-	if len(callResult.Content) == 0 {
-		t.Fatal("Expected content in tool result")
-	}
+	testFunc(t, ctx, clnt, tsvr)
 
-	textContent, ok := callResult.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("Expected TextContent, got %T", callResult.Content[0])
-	}
-
-	expected := "Echo: hello world"
-	if textContent.Text != expected {
-		t.Fatalf("Expected '%s', got '%s'", expected, textContent.Text)
-	}
-
-	t.Logf("Tool call result: %s", textContent.Text)
-
-	// Clean up: close proxy's upstream connection before closing pipes
+	// XXX: use defer?
 	prx.Close()
-
+	clntWriter.Close()
+	prxWriter.Close()
+	clntReader.Close()
+	prxReader.Close()
 	cancel()
-	clientReader.Close()
-	clientWriter.Close()
-	proxyReader.Close()
-	proxyWriter.Close()
+}
+
+func testToolCall(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer) {
+
+	lst, err := clnt.ListTools(ctx, mcpgo.ListToolsRequest{})
+	if err != nil {
+		t.Errorf("ListTools() failed with %s", err)
+	} else if len(lst.Tools) != 1 {
+		t.Errorf("ListTools() got %d want 1", len(lst.Tools))
+	} else if lst.Tools[0].Name != "echo" {
+		t.Errorf("ListTools() got %s want echo", lst.Tools[0].Name)
+	}
+
+	ret, err := clnt.CallTool(ctx, mcpgo.CallToolRequest{
+		Request: mcpgo.Request{Method: "tools/call"},
+		Params: mcpgo.CallToolParams{
+			Name:      "echo",
+			Arguments: map[string]any{"message": "hello world"},
+		},
+	})
+	if err != nil {
+		t.Errorf("CallTool(echo) failed with %s", err)
+	} else if len(ret.Content) == 0 {
+		t.Errorf("CallTool(echo) missing result content")
+	} else {
+		tc, ok := ret.Content[0].(mcpgo.TextContent)
+		if !ok {
+			t.Fatalf("CallTool(echo) expected TextContent, got %T: %#v", ret.Content[0],
+				ret.Content[0])
+		} else {
+			expected := "echo: hello world"
+			if tc.Text != expected {
+				t.Fatalf("CallTool(echo) expected %s got %s", expected, tc.Text)
+			}
+		}
+	}
 }
 
 func TestProxySSE(t *testing.T) {
@@ -132,7 +136,7 @@ func TestProxySSE(t *testing.T) {
 
 	fmt.Println("sse server url:", svr.URL)
 
-	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr)
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testToolCall)
 }
 
 func TestProxyStreamableHTTP(t *testing.T) {
@@ -142,5 +146,5 @@ func TestProxyStreamableHTTP(t *testing.T) {
 
 	fmt.Println("streamable http server url:", svr.URL)
 
-	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr)
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testToolCall)
 }
