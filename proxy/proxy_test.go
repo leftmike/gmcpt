@@ -219,92 +219,66 @@ func newPromptsMCPServer() *mcpsvr.MCPServer {
 	return tsvr
 }
 
-func testPromptList(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
-	tsvr *mcpsvr.MCPServer) {
+func testListPrompts(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	promptNames []string) {
 
 	lst, err := clnt.ListPrompts(ctx, mcpgo.ListPromptsRequest{})
 	if err != nil {
 		t.Errorf("ListPrompts() failed with %s", err)
-	} else if len(lst.Prompts) != 2 {
-		t.Errorf("ListPrompts() got %d want 2", len(lst.Prompts))
+	} else if len(lst.Prompts) != len(promptNames) {
+		t.Errorf("ListPrompts() got %d want %d", len(lst.Prompts), len(promptNames))
 	} else {
-		var greet, help bool
+		found := map[string]struct{}{}
 		for _, p := range lst.Prompts {
-			switch p.Name {
-			case "greet":
-				greet = true
-			case "help":
-				help = true
-			default:
+			if !slices.Contains(promptNames, p.Name) {
 				t.Errorf("ListPrompts() unexpected prompt: %s", p.Name)
+			} else {
+				found[p.Name] = struct{}{}
 			}
 		}
-		if !greet {
-			t.Errorf("ListPrompts() missing greet prompt")
-		}
-		if !help {
-			t.Errorf("ListPrompts() missing help prompt")
+		for _, name := range promptNames {
+			if _, ok := found[name]; !ok {
+				t.Errorf("ListPrompts() missing %s prompt", name)
+			}
 		}
 	}
 }
 
-func testPromptGet(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
-	tsvr *mcpsvr.MCPServer) {
+func testGetPrompt(t *testing.T, ctx context.Context, clnt *mcpclnt.Client, name string,
+	args map[string]string, expected string, role mcpgo.Role) {
 
 	ret, err := clnt.GetPrompt(ctx, mcpgo.GetPromptRequest{
 		Request: mcpgo.Request{Method: "prompts/get"},
 		Params: mcpgo.GetPromptParams{
-			Name:      "greet",
-			Arguments: map[string]string{"name": "World"},
+			Name:      name,
+			Arguments: args,
 		},
 	})
 	if err != nil {
-		t.Errorf("GetPrompt(greet) failed with %s", err)
+		t.Errorf("GetPrompt(%s) failed with %s", name, err)
 	} else if len(ret.Messages) == 0 {
-		t.Errorf("GetPrompt(greet) missing messages")
+		t.Errorf("GetPrompt(%s) missing messages", name)
 	} else {
 		tc, ok := ret.Messages[0].Content.(mcpgo.TextContent)
 		if !ok {
-			t.Errorf("GetPrompt(greet) expected TextContent, got %T: %#v",
+			t.Errorf("GetPrompt(%s) expected TextContent, got %T: %#v", name,
 				ret.Messages[0].Content, ret.Messages[0].Content)
 		} else {
-			expected := "Hello, World!"
 			if tc.Text != expected {
-				t.Errorf("GetPrompt(greet) got %q want %q", tc.Text, expected)
+				t.Errorf("GetPrompt(%s) got %q want %q", name, tc.Text, expected)
 			}
-			if ret.Messages[0].Role != mcpgo.RoleUser {
-				t.Errorf("GetPrompt(greet) role got %q want %q", ret.Messages[0].Role,
-					mcpgo.RoleUser)
+			if ret.Messages[0].Role != role {
+				t.Errorf("GetPrompt(%s) role got %q want %q", name, ret.Messages[0].Role, role)
 			}
 		}
 	}
+}
 
-	ret, err = clnt.GetPrompt(ctx, mcpgo.GetPromptRequest{
-		Request: mcpgo.Request{Method: "prompts/get"},
-		Params: mcpgo.GetPromptParams{
-			Name: "help",
-		},
-	})
-	if err != nil {
-		t.Errorf("GetPrompt(help) failed with %s", err)
-	} else if len(ret.Messages) == 0 {
-		t.Errorf("GetPrompt(help) missing messages")
-	} else {
-		tc, ok := ret.Messages[0].Content.(mcpgo.TextContent)
-		if !ok {
-			t.Errorf("GetPrompt(help) expected TextContent, got %T: %#v",
-				ret.Messages[0].Content, ret.Messages[0].Content)
-		} else {
-			expected := "This is the help message."
-			if tc.Text != expected {
-				t.Errorf("GetPrompt(help) got %q want %q", tc.Text, expected)
-			}
-			if ret.Messages[0].Role != mcpgo.RoleAssistant {
-				t.Errorf("GetPrompt(help) role got %q want %q", ret.Messages[0].Role,
-					mcpgo.RoleAssistant)
-			}
-		}
-	}
+func testPrompts(t *testing.T, ctx context.Context, clnt *mcpclnt.Client, tsvr *mcpsvr.MCPServer) {
+	testListPrompts(t, ctx, clnt, []string{"greet", "help"})
+	testGetPrompt(t, ctx, clnt, "greet", map[string]string{"name": "World"}, "Hello, World!",
+		mcpgo.RoleUser)
+	testGetPrompt(t, ctx, clnt, "help", nil, "This is the help message.", mcpgo.RoleAssistant)
 }
 
 func TestProxyPromptsSSE(t *testing.T) {
@@ -314,8 +288,7 @@ func TestProxyPromptsSSE(t *testing.T) {
 
 	fmt.Println("sse server url:", svr.URL)
 
-	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testPromptList)
-	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testPromptGet)
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testPrompts)
 }
 
 func TestProxyPromptsHTTP(t *testing.T) {
@@ -325,8 +298,7 @@ func TestProxyPromptsHTTP(t *testing.T) {
 
 	fmt.Println("streamable http server url:", svr.URL)
 
-	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testPromptList)
-	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testPromptGet)
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testPrompts)
 }
 
 func newResourcesMCPServer() *mcpsvr.MCPServer {
@@ -538,4 +510,69 @@ func TestProxyToolsChangedHTTP(t *testing.T) {
 	fmt.Println("streamable http server url:", svr.URL)
 
 	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testToolsChanged)
+}
+
+func testPromptsChanged(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer) {
+
+	onNotify := make(chan string, 4)
+	clnt.OnNotification(func(notify mcpgo.JSONRPCNotification) {
+		onNotify <- notify.Method
+	})
+
+	testListPrompts(t, ctx, clnt, []string{"greet", "help"})
+
+	tsvr.AddPrompt(mcpgo.NewPrompt("farewell",
+		mcpgo.WithPromptDescription("generates a farewell message"),
+		mcpgo.WithArgument("name",
+			mcpgo.ArgumentDescription("name to bid farewell"),
+			mcpgo.RequiredArgument(),
+		)),
+		func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
+			name := req.Params.Arguments["name"]
+			return mcpgo.NewGetPromptResult(
+				"a farewell message",
+				[]mcpgo.PromptMessage{
+					mcpgo.NewPromptMessage(mcpgo.RoleUser,
+						mcpgo.NewTextContent(fmt.Sprintf("Goodbye, %s!", name))),
+				},
+			), nil
+		})
+
+	timeout := 2 * time.Second
+	select {
+	case method := <-onNotify:
+		if method != "notifications/prompts/list_changed" {
+			t.Errorf("OnNotification() got %s want notifications/prompts/list_changed", method)
+		}
+	case <-time.After(timeout):
+		t.Errorf("OnNotification() timed out after %v", timeout)
+	}
+
+	testListPrompts(t, ctx, clnt, []string{"greet", "help", "farewell"})
+	testGetPrompt(t, ctx, clnt, "greet", map[string]string{"name": "Dog"}, "Hello, Dog!",
+		mcpgo.RoleUser)
+	testGetPrompt(t, ctx, clnt, "help", nil, "This is the help message.", mcpgo.RoleAssistant)
+	testGetPrompt(t, ctx, clnt, "farewell", map[string]string{"name": "World"}, "Goodbye, World!",
+		mcpgo.RoleUser)
+}
+
+func TestProxyPromptsChangedSSE(t *testing.T) {
+	tsvr := newPromptsMCPServer()
+	svr := httptest.NewServer(mcpsvr.NewSSEServer(tsvr))
+	defer svr.Close()
+
+	fmt.Println("sse server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testPromptsChanged)
+}
+
+func TestProxyPromptsChangedHTTP(t *testing.T) {
+	tsvr := newPromptsMCPServer()
+	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
+	defer svr.Close()
+
+	fmt.Println("streamable http server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testPromptsChanged)
 }
