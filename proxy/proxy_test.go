@@ -338,93 +338,63 @@ func newResourcesMCPServer() *mcpsvr.MCPServer {
 	return tsvr
 }
 
-func testResourceList(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
-	tsvr *mcpsvr.MCPServer) {
+func testListResources(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	resourceURIs []string) {
 
 	lst, err := clnt.ListResources(ctx, mcpgo.ListResourcesRequest{})
 	if err != nil {
 		t.Errorf("ListResources() failed with %s", err)
-	} else if len(lst.Resources) != 2 {
-		t.Errorf("ListResources() got %d want 2", len(lst.Resources))
+	} else if len(lst.Resources) != len(resourceURIs) {
+		t.Errorf("ListResources() got %d want %d", len(lst.Resources), len(resourceURIs))
 	} else {
-		var config, readme bool
+		found := map[string]struct{}{}
 		for _, r := range lst.Resources {
-			switch r.URI {
-			case "file:///config.json":
-				config = true
-				if r.Name != "config.json" {
-					t.Errorf("ListResources() config.json name got %s want config.json", r.Name)
-				}
-			case "file:///readme.txt":
-				readme = true
-				if r.Name != "readme.txt" {
-					t.Errorf("ListResources() readme.txt name got %q want readme.txt", r.Name)
-				}
-			default:
+			if !slices.Contains(resourceURIs, r.URI) {
 				t.Errorf("ListResources() unexpected resource: %s", r.URI)
+			} else {
+				found[r.URI] = struct{}{}
 			}
 		}
-		if !config {
-			t.Errorf("ListResources() missing config.json resource")
-		}
-		if !readme {
-			t.Errorf("ListResources() missing readme.txt resource")
+		for _, uri := range resourceURIs {
+			if _, ok := found[uri]; !ok {
+				t.Errorf("ListResources() missing %s resource", uri)
+			}
 		}
 	}
 }
 
-func testResourceRead(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
-	tsvr *mcpsvr.MCPServer) {
+func testReadResource(t *testing.T, ctx context.Context, clnt *mcpclnt.Client, uri string,
+	expected string) {
 
 	ret, err := clnt.ReadResource(ctx, mcpgo.ReadResourceRequest{
 		Request: mcpgo.Request{Method: "resources/read"},
 		Params: mcpgo.ReadResourceParams{
-			URI: "file:///config.json",
+			URI: uri,
 		},
 	})
 	if err != nil {
-		t.Errorf("ReadResource(config.json) failed with %s", err)
+		t.Errorf("ReadResource(%s) failed with %s", uri, err)
 	} else if len(ret.Contents) == 0 {
-		t.Errorf("ReadResource(config.json) missing contents")
+		t.Errorf("ReadResource(%s) missing contents", uri)
 	} else {
 		tc, ok := mcpgo.AsTextResourceContents(ret.Contents[0])
 		if !ok {
-			t.Errorf("ReadResource(config.json) expected TextResourceContents, got %T: %#v",
+			t.Errorf("ReadResource(%s) expected TextResourceContents, got %T: %#v", uri,
 				ret.Contents[0], ret.Contents[0])
 		} else {
-			expected := `{"version": "1.0", "debug": true}`
 			if tc.Text != expected {
-				t.Errorf("ReadResource(config.json) got %q want %q", tc.Text, expected)
-			}
-			if tc.URI != "file:///config.json" {
-				t.Errorf("ReadResource(config.json) URI got %q want %q",
-					tc.URI, "file:///config.json")
+				t.Errorf("ReadResource(%s) got %q want %q", uri, tc.Text, expected)
 			}
 		}
 	}
+}
 
-	ret, err = clnt.ReadResource(ctx, mcpgo.ReadResourceRequest{
-		Request: mcpgo.Request{Method: "resources/read"},
-		Params: mcpgo.ReadResourceParams{
-			URI: "file:///readme.txt",
-		},
-	})
-	if err != nil {
-		t.Errorf("ReadResource(readme.txt) failed with %s", err)
-	} else if len(ret.Contents) == 0 {
-		t.Errorf("ReadResource(readme.txt) missing contents")
-	} else {
-		tc, ok := mcpgo.AsTextResourceContents(ret.Contents[0])
-		if !ok {
-			t.Errorf("ReadResource(readme.txt) expected TextResourceContents, got %T: %#v",
-				ret.Contents[0], ret.Contents[0])
-		} else {
-			expected := "Welcome to the project!"
-			if tc.Text != expected {
-				t.Errorf("ReadResource(readme.txt) got %q want %q", tc.Text, expected)
-			}
-		}
-	}
+func testResources(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer) {
+
+	testListResources(t, ctx, clnt, []string{"file:///config.json", "file:///readme.txt"})
+	testReadResource(t, ctx, clnt, "file:///config.json", `{"version": "1.0", "debug": true}`)
+	testReadResource(t, ctx, clnt, "file:///readme.txt", "Welcome to the project!")
 }
 
 func TestProxyResourcesSSE(t *testing.T) {
@@ -434,8 +404,7 @@ func TestProxyResourcesSSE(t *testing.T) {
 
 	fmt.Println("sse server url:", svr.URL)
 
-	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testResourceList)
-	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testResourceRead)
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testResources)
 }
 
 func TestProxyResourcesHTTP(t *testing.T) {
@@ -445,8 +414,7 @@ func TestProxyResourcesHTTP(t *testing.T) {
 
 	fmt.Println("streamable http server url:", svr.URL)
 
-	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResourceList)
-	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResourceRead)
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResources)
 }
 
 func testToolsChanged(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
