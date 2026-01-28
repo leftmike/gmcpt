@@ -23,18 +23,31 @@ func init() {
 func newToolsMCPServer() *mcpsvr.MCPServer {
 	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0", mcpsvr.WithToolCapabilities(true))
 
-	echoTool := mcpgo.NewTool("echo",
+	tsvr.AddTool(mcpgo.NewTool("echo",
 		mcpgo.WithDescription("echoes back the input"),
 		mcpgo.WithString("message",
 			mcpgo.Required(),
 			mcpgo.Description("message to echo"),
-		),
-	)
-
-	tsvr.AddTool(echoTool,
+		)),
 		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 			msg := req.GetString("message", "")
 			return mcpgo.NewToolResultText(fmt.Sprintf("echo: %s", msg)), nil
+		})
+
+	tsvr.AddTool(mcpgo.NewTool("add",
+		mcpgo.WithDescription("adds two numbers"),
+		mcpgo.WithNumber("a",
+			mcpgo.Required(),
+			mcpgo.Description("first number"),
+		),
+		mcpgo.WithNumber("b",
+			mcpgo.Required(),
+			mcpgo.Description("second number"),
+		)),
+		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			a := req.GetFloat("a", 0)
+			b := req.GetFloat("b", 0)
+			return mcpgo.NewToolResultText(fmt.Sprintf("sum: %g", a+b)), nil
 		})
 
 	return tsvr
@@ -134,10 +147,26 @@ func testToolCall(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 	lst, err := clnt.ListTools(ctx, mcpgo.ListToolsRequest{})
 	if err != nil {
 		t.Errorf("ListTools() failed with %s", err)
-	} else if len(lst.Tools) != 1 {
-		t.Errorf("ListTools() got %d want 1", len(lst.Tools))
-	} else if lst.Tools[0].Name != "echo" {
-		t.Errorf("ListTools() got %s want echo", lst.Tools[0].Name)
+	} else if len(lst.Tools) != 2 {
+		t.Errorf("ListTools() got %d want 2", len(lst.Tools))
+	} else {
+		var echo, add bool
+		for _, tool := range lst.Tools {
+			switch tool.Name {
+			case "echo":
+				echo = true
+			case "add":
+				add = true
+			default:
+				t.Errorf("ListTools() unexpected tool: %s", tool.Name)
+			}
+		}
+		if !echo {
+			t.Errorf("ListTools() missing echo tool")
+		}
+		if !add {
+			t.Errorf("ListTools() missing add tool")
+		}
 	}
 
 	ret, err := clnt.CallTool(ctx, mcpgo.CallToolRequest{
@@ -160,6 +189,30 @@ func testToolCall(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
 			expected := "echo: hello world"
 			if tc.Text != expected {
 				t.Fatalf("CallTool(echo) got %s want %s", tc.Text, expected)
+			}
+		}
+	}
+
+	ret, err = clnt.CallTool(ctx, mcpgo.CallToolRequest{
+		Request: mcpgo.Request{Method: "tools/call"},
+		Params: mcpgo.CallToolParams{
+			Name:      "add",
+			Arguments: map[string]any{"a": 3.5, "b": 2.5},
+		},
+	})
+	if err != nil {
+		t.Errorf("CallTool(add) failed with %s", err)
+	} else if len(ret.Content) == 0 {
+		t.Errorf("CallTool(add) missing result content")
+	} else {
+		tc, ok := ret.Content[0].(mcpgo.TextContent)
+		if !ok {
+			t.Fatalf("CallTool(add) expected TextContent, got %T: %#v", ret.Content[0],
+				ret.Content[0])
+		} else {
+			expected := "sum: 6"
+			if tc.Text != expected {
+				t.Fatalf("CallTool(add) got %s want %s", tc.Text, expected)
 			}
 		}
 	}
