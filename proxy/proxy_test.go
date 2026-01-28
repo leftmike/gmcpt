@@ -544,3 +544,64 @@ func TestProxyPromptsChangedHTTP(t *testing.T) {
 
 	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testPromptsChanged)
 }
+
+func testResourcesChanged(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer) {
+
+	onNotify := make(chan string, 4)
+	clnt.OnNotification(func(notify mcpgo.JSONRPCNotification) {
+		onNotify <- notify.Method
+	})
+
+	testListResources(t, ctx, clnt, []string{"file:///config.json", "file:///readme.txt"})
+
+	tsvr.AddResource(
+		mcpgo.NewResource("file:///notes.txt", "notes.txt",
+			mcpgo.WithResourceDescription("Project notes")),
+		func(ctx context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents,
+			error) {
+
+			return []mcpgo.ResourceContents{
+				mcpgo.TextResourceContents{
+					URI:  "file:///notes.txt",
+					Text: "These are important notes.",
+				},
+			}, nil
+		})
+
+	timeout := 2 * time.Second
+	select {
+	case method := <-onNotify:
+		if method != "notifications/resources/list_changed" {
+			t.Errorf("OnNotification() got %s want notifications/resources/list_changed", method)
+		}
+	case <-time.After(timeout):
+		t.Errorf("OnNotification() timed out after %v", timeout)
+	}
+
+	testListResources(t, ctx, clnt,
+		[]string{"file:///config.json", "file:///readme.txt", "file:///notes.txt"})
+	testReadResource(t, ctx, clnt, "file:///config.json", `{"version": "1.0", "debug": true}`)
+	testReadResource(t, ctx, clnt, "file:///readme.txt", "Welcome to the project!")
+	testReadResource(t, ctx, clnt, "file:///notes.txt", "These are important notes.")
+}
+
+func TestProxyResourcesChangedSSE(t *testing.T) {
+	tsvr := newResourcesMCPServer()
+	svr := httptest.NewServer(mcpsvr.NewSSEServer(tsvr))
+	defer svr.Close()
+
+	fmt.Println("sse server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testResourcesChanged)
+}
+
+func TestProxyResourcesChangedHTTP(t *testing.T) {
+	tsvr := newResourcesMCPServer()
+	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
+	defer svr.Close()
+
+	fmt.Println("streamable http server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResourcesChanged)
+}
