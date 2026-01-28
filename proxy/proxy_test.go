@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -18,75 +19,6 @@ import (
 
 func init() {
 	slog.SetLogLoggerLevel(slog.LevelError)
-}
-
-func newToolsMCPServer() *mcpsvr.MCPServer {
-	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0", mcpsvr.WithToolCapabilities(true))
-
-	tsvr.AddTool(mcpgo.NewTool("echo",
-		mcpgo.WithDescription("echoes back the input"),
-		mcpgo.WithString("message",
-			mcpgo.Required(),
-			mcpgo.Description("message to echo"),
-		)),
-		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-			msg := req.GetString("message", "")
-			return mcpgo.NewToolResultText(fmt.Sprintf("echo: %s", msg)), nil
-		})
-
-	tsvr.AddTool(mcpgo.NewTool("add",
-		mcpgo.WithDescription("adds two numbers"),
-		mcpgo.WithNumber("a",
-			mcpgo.Required(),
-			mcpgo.Description("first number"),
-		),
-		mcpgo.WithNumber("b",
-			mcpgo.Required(),
-			mcpgo.Description("second number"),
-		)),
-		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-			a := req.GetFloat("a", 0)
-			b := req.GetFloat("b", 0)
-			return mcpgo.NewToolResultText(fmt.Sprintf("sum: %g", a+b)), nil
-		})
-
-	return tsvr
-}
-
-func newPromptsMCPServer() *mcpsvr.MCPServer {
-	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0",
-		mcpsvr.WithPromptCapabilities(true))
-
-	tsvr.AddPrompt(mcpgo.NewPrompt("greet",
-		mcpgo.WithPromptDescription("generates a greeting"),
-		mcpgo.WithArgument("name",
-			mcpgo.ArgumentDescription("name to greet"),
-			mcpgo.RequiredArgument(),
-		)),
-		func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
-			name := req.Params.Arguments["name"]
-			return mcpgo.NewGetPromptResult(
-				"a greeting message",
-				[]mcpgo.PromptMessage{
-					mcpgo.NewPromptMessage(mcpgo.RoleUser,
-						mcpgo.NewTextContent(fmt.Sprintf("Hello, %s!", name))),
-				},
-			), nil
-		})
-
-	tsvr.AddPrompt(mcpgo.NewPrompt("help",
-		mcpgo.WithPromptDescription("shows help information")),
-		func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
-			return mcpgo.NewGetPromptResult(
-				"help information",
-				[]mcpgo.PromptMessage{
-					mcpgo.NewPromptMessage(mcpgo.RoleAssistant,
-						mcpgo.NewTextContent("This is the help message.")),
-				},
-			), nil
-		})
-
-	return tsvr
 }
 
 type testProxyFunc func(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
@@ -141,81 +73,94 @@ func testProxy(t *testing.T, prx *Proxy, tsvr *mcpsvr.MCPServer, testFunc testPr
 	prx.Close()
 }
 
-func testToolCall(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
-	tsvr *mcpsvr.MCPServer) {
+func newToolsMCPServer() *mcpsvr.MCPServer {
+	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0", mcpsvr.WithToolCapabilities(true))
 
+	tsvr.AddTool(mcpgo.NewTool("echo",
+		mcpgo.WithDescription("echoes back the input"),
+		mcpgo.WithString("message",
+			mcpgo.Required(),
+			mcpgo.Description("message to echo"),
+		)),
+		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			msg := req.GetString("message", "")
+			return mcpgo.NewToolResultText(fmt.Sprintf("echo: %s", msg)), nil
+		})
+
+	tsvr.AddTool(mcpgo.NewTool("add",
+		mcpgo.WithDescription("adds two numbers"),
+		mcpgo.WithNumber("a",
+			mcpgo.Required(),
+			mcpgo.Description("first number"),
+		),
+		mcpgo.WithNumber("b",
+			mcpgo.Required(),
+			mcpgo.Description("second number"),
+		)),
+		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			a := req.GetFloat("a", 0)
+			b := req.GetFloat("b", 0)
+			return mcpgo.NewToolResultText(fmt.Sprintf("sum: %g", a+b)), nil
+		})
+
+	return tsvr
+}
+
+func testListTools(t *testing.T, ctx context.Context, clnt *mcpclnt.Client, toolNames []string) {
 	lst, err := clnt.ListTools(ctx, mcpgo.ListToolsRequest{})
 	if err != nil {
 		t.Errorf("ListTools() failed with %s", err)
-	} else if len(lst.Tools) != 2 {
-		t.Errorf("ListTools() got %d want 2", len(lst.Tools))
+	} else if len(lst.Tools) != len(toolNames) {
+		t.Errorf("ListTools() got %d want %d", len(lst.Tools), len(toolNames))
 	} else {
-		var echo, add bool
+		found := map[string]struct{}{}
 		for _, tool := range lst.Tools {
-			switch tool.Name {
-			case "echo":
-				echo = true
-			case "add":
-				add = true
-			default:
+			if !slices.Contains(toolNames, tool.Name) {
 				t.Errorf("ListTools() unexpected tool: %s", tool.Name)
+			} else {
+				found[tool.Name] = struct{}{}
 			}
 		}
-		if !echo {
-			t.Errorf("ListTools() missing echo tool")
-		}
-		if !add {
-			t.Errorf("ListTools() missing add tool")
+		for _, name := range toolNames {
+			if _, ok := found[name]; !ok {
+				t.Errorf("ListTools() missing %s tool", name)
+			}
 		}
 	}
+}
+
+func testToolCall(t *testing.T, ctx context.Context, clnt *mcpclnt.Client, name string,
+	args map[string]any, expected string) {
 
 	ret, err := clnt.CallTool(ctx, mcpgo.CallToolRequest{
 		Request: mcpgo.Request{Method: "tools/call"},
 		Params: mcpgo.CallToolParams{
-			Name:      "echo",
-			Arguments: map[string]any{"message": "hello world"},
+			Name:      name,
+			Arguments: args,
 		},
 	})
 	if err != nil {
-		t.Errorf("CallTool(echo) failed with %s", err)
+		t.Errorf("CallTool(%s) failed with %s", name, err)
 	} else if len(ret.Content) == 0 {
-		t.Errorf("CallTool(echo) missing result content")
+		t.Errorf("CallTool(%s) missing result content", name)
 	} else {
 		tc, ok := ret.Content[0].(mcpgo.TextContent)
 		if !ok {
-			t.Fatalf("CallTool(echo) expected TextContent, got %T: %#v", ret.Content[0],
+			t.Errorf("CallTool(%s) expected TextContent, got %T: %#v", name, ret.Content[0],
 				ret.Content[0])
 		} else {
-			expected := "echo: hello world"
 			if tc.Text != expected {
-				t.Fatalf("CallTool(echo) got %s want %s", tc.Text, expected)
+				t.Errorf("CallTool(%s) got %s want %s", name, tc.Text, expected)
 			}
 		}
 	}
+}
 
-	ret, err = clnt.CallTool(ctx, mcpgo.CallToolRequest{
-		Request: mcpgo.Request{Method: "tools/call"},
-		Params: mcpgo.CallToolParams{
-			Name:      "add",
-			Arguments: map[string]any{"a": 3.5, "b": 2.5},
-		},
-	})
-	if err != nil {
-		t.Errorf("CallTool(add) failed with %s", err)
-	} else if len(ret.Content) == 0 {
-		t.Errorf("CallTool(add) missing result content")
-	} else {
-		tc, ok := ret.Content[0].(mcpgo.TextContent)
-		if !ok {
-			t.Fatalf("CallTool(add) expected TextContent, got %T: %#v", ret.Content[0],
-				ret.Content[0])
-		} else {
-			expected := "sum: 6"
-			if tc.Text != expected {
-				t.Fatalf("CallTool(add) got %s want %s", tc.Text, expected)
-			}
-		}
-	}
+func testTools(t *testing.T, ctx context.Context, clnt *mcpclnt.Client, tsvr *mcpsvr.MCPServer) {
+	testListTools(t, ctx, clnt, []string{"echo", "add"})
+	testToolCall(t, ctx, clnt, "echo", map[string]any{"message": "hello world"},
+		"echo: hello world")
+	testToolCall(t, ctx, clnt, "add", map[string]any{"a": 3.5, "b": 2.5}, "sum: 6")
 }
 
 func TestProxyToolSSE(t *testing.T) {
@@ -225,7 +170,7 @@ func TestProxyToolSSE(t *testing.T) {
 
 	fmt.Println("sse server url:", svr.URL)
 
-	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testToolCall)
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testTools)
 }
 
 func TestProxyToolHTTP(t *testing.T) {
@@ -235,7 +180,43 @@ func TestProxyToolHTTP(t *testing.T) {
 
 	fmt.Println("streamable http server url:", svr.URL)
 
-	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testToolCall)
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testTools)
+}
+
+func newPromptsMCPServer() *mcpsvr.MCPServer {
+	tsvr := mcpsvr.NewMCPServer("test-upstream-server", "0.1.0",
+		mcpsvr.WithPromptCapabilities(true))
+
+	tsvr.AddPrompt(mcpgo.NewPrompt("greet",
+		mcpgo.WithPromptDescription("generates a greeting"),
+		mcpgo.WithArgument("name",
+			mcpgo.ArgumentDescription("name to greet"),
+			mcpgo.RequiredArgument(),
+		)),
+		func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
+			name := req.Params.Arguments["name"]
+			return mcpgo.NewGetPromptResult(
+				"a greeting message",
+				[]mcpgo.PromptMessage{
+					mcpgo.NewPromptMessage(mcpgo.RoleUser,
+						mcpgo.NewTextContent(fmt.Sprintf("Hello, %s!", name))),
+				},
+			), nil
+		})
+
+	tsvr.AddPrompt(mcpgo.NewPrompt("help",
+		mcpgo.WithPromptDescription("shows help information")),
+		func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
+			return mcpgo.NewGetPromptResult(
+				"help information",
+				[]mcpgo.PromptMessage{
+					mcpgo.NewPromptMessage(mcpgo.RoleAssistant,
+						mcpgo.NewTextContent("This is the help message.")),
+				},
+			), nil
+		})
+
+	return tsvr
 }
 
 func testPromptList(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
@@ -494,4 +475,67 @@ func TestProxyResourcesHTTP(t *testing.T) {
 
 	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResourceList)
 	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResourceRead)
+}
+
+func testToolsChanged(t *testing.T, ctx context.Context, clnt *mcpclnt.Client,
+	tsvr *mcpsvr.MCPServer) {
+
+	onNotify := make(chan string, 4)
+	clnt.OnNotification(func(notify mcpgo.JSONRPCNotification) {
+		onNotify <- notify.Method
+	})
+
+	testListTools(t, ctx, clnt, []string{"echo", "add"})
+
+	tsvr.AddTool(mcpgo.NewTool("multiply",
+		mcpgo.WithDescription("multiplies two numbers"),
+		mcpgo.WithNumber("a",
+			mcpgo.Required(),
+			mcpgo.Description("first number"),
+		),
+		mcpgo.WithNumber("b",
+			mcpgo.Required(),
+			mcpgo.Description("second number"),
+		)),
+		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			a := req.GetFloat("a", 0)
+			b := req.GetFloat("b", 0)
+			return mcpgo.NewToolResultText(fmt.Sprintf("product: %g", a*b)), nil
+		})
+
+	timeout := 2 * time.Second
+	select {
+	case method := <-onNotify:
+		if method != "notifications/tools/list_changed" {
+			t.Errorf("OnNotification() got %s want notifications/tools/list_changed", method)
+		}
+	case <-time.After(timeout):
+		t.Errorf("OnNotification() timed out after %v", timeout)
+	}
+
+	testListTools(t, ctx, clnt, []string{"echo", "add", "multiply"})
+	testToolCall(t, ctx, clnt, "echo", map[string]any{"message": "hello world"},
+		"echo: hello world")
+	testToolCall(t, ctx, clnt, "add", map[string]any{"a": 3.5, "b": 2.5}, "sum: 6")
+	testToolCall(t, ctx, clnt, "multiply", map[string]any{"a": 3.0, "b": 4.0}, "product: 12")
+}
+
+func TestProxyToolsChangedSSE(t *testing.T) {
+	tsvr := newToolsMCPServer()
+	svr := httptest.NewServer(mcpsvr.NewSSEServer(tsvr))
+	defer svr.Close()
+
+	fmt.Println("sse server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/sse", "", "", true), tsvr, testToolsChanged)
+}
+
+func TestProxyToolsChangedHTTP(t *testing.T) {
+	tsvr := newToolsMCPServer()
+	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
+	defer svr.Close()
+
+	fmt.Println("streamable http server url:", svr.URL)
+
+	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testToolsChanged)
 }
