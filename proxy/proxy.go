@@ -78,7 +78,7 @@ func (prx *Proxy) withSession(ctx context.Context,
 	}
 
 	if prx.sess == nil {
-		backoff := time.Second
+		backoff := 250 * time.Millisecond
 		for {
 			var err error
 			prx.sess, err = prx.clnt.Connect(ctx, prx.transport(), nil)

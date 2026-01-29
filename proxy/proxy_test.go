@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -605,6 +606,67 @@ func TestProxyResourcesChangedHTTP(t *testing.T) {
 	fmt.Println("streamable http server url:", svr.URL)
 
 	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResourcesChanged)
+}
+
+func TestWithSessionRetrySuccess(t *testing.T) {
+	var failed, success bool
+
+	start := time.Now()
+	handler := mcpsvr.NewStreamableHTTPServer(newToolsMCPServer())
+	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if time.Since(start) < 500*time.Millisecond {
+			failed = true
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		} else {
+			handler.ServeHTTP(w, r)
+		}
+	}))
+	defer svr.Close()
+
+	prx := NewProxy(svr.URL+"/mcp", "", "", false)
+	prx.retry = true
+
+	err := prx.withSession(context.Background(),
+		func(ctx context.Context, sess *mcp.ClientSession) error {
+			success = true
+			return nil
+		})
+	if err != nil {
+		t.Errorf("withSession() failed with %s", err)
+	} else {
+		if !failed {
+			t.Error("server never failed")
+		}
+		if !success {
+			t.Error("withSession() session never established")
+		}
+		if prx.sess == nil {
+			t.Error("withSession() prx.sess == nil")
+		}
+
+		prx.sess.Close()
+	}
+}
+
+func TestWithSessionRetryContextCancel(t *testing.T) {
+	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer svr.Close()
+
+	prx := NewProxy(svr.URL+"/mcp", "", "", false)
+	prx.retry = true
+
+	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	err := prx.withSession(ctx,
+		func(ctx context.Context, sess *mcp.ClientSession) error {
+			t.Error("withSession() should not call with")
+			return nil
+		})
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("withSession() got %s want %s", err, context.DeadlineExceeded)
+	}
 }
 
 func requireAPIKey(handler http.Handler, headerName, apiKey string) http.Handler {
