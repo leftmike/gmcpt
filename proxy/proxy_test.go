@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"slices"
 	"testing"
@@ -604,4 +605,73 @@ func TestProxyResourcesChangedHTTP(t *testing.T) {
 	fmt.Println("streamable http server url:", svr.URL)
 
 	testProxy(t, NewProxy(svr.URL+"/mcp", "", "", false), tsvr, testResourcesChanged)
+}
+
+func requireAPIKey(handler http.Handler, headerName, apiKey string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(headerName) != apiKey {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	})
+}
+
+func TestProxyAPIKey(t *testing.T) {
+	cases := []struct {
+		h    string
+		key  string
+		pkey string
+		ph   string
+		fail bool
+	}{
+		{h: "X-API-Key", key: "123abc", ph: "X-API-Key", pkey: "123abc"},
+		{
+			h: "Authorization", key: "Bearer token-456",
+			ph: "Authorization", pkey: "Bearer token-456",
+		},
+		{h: "X-API-Key", key: "123abc", fail: true},
+		{h: "X-API-Key", key: "correct-key", pkey: "wrong-key", ph: "X-API-Key", fail: true},
+	}
+
+	configs := []struct {
+		nhfn func(tsvr *mcpsvr.MCPServer) http.Handler
+		ep   string
+		sse  bool
+	}{
+		{
+			nhfn: func(tsvr *mcpsvr.MCPServer) http.Handler {
+				return mcpsvr.NewSSEServer(tsvr)
+			},
+			ep:  "/sse",
+			sse: true,
+		},
+		{
+			nhfn: func(tsvr *mcpsvr.MCPServer) http.Handler {
+				return mcpsvr.NewStreamableHTTPServer(tsvr)
+			},
+			ep: "/mcp",
+		},
+	}
+
+	for _, c := range cases {
+		for _, cfg := range configs {
+			tsvr := newToolsMCPServer()
+			svr := httptest.NewServer(requireAPIKey(cfg.nhfn(tsvr), c.h, c.key))
+			prx := NewProxy(svr.URL+cfg.ep, c.pkey, c.ph, cfg.sse)
+
+			if c.fail {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+
+				err := prx.run(ctx, slog.Default(), &mcp.IOTransport{Reader: nil, Writer: nil})
+				if err == nil {
+					t.Errorf("Proxy.run(%s, %v) did not fail", cfg.ep, c)
+					prx.Close()
+				}
+			} else {
+				testProxy(t, prx, tsvr, testTools)
+			}
+		}
+	}
 }
