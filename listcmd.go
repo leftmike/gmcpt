@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/leftmike/gmcpt/list"
+	"github.com/leftmike/gmcpt/client"
 )
 
 func listCmd() {
@@ -46,23 +46,23 @@ func listCmd() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	var lstOpts list.ListOptions
+	var lstOpts client.ListOptions
 	if tools {
-		lstOpts |= list.ListOptionsTools
+		lstOpts |= client.ListOptionsTools
 	}
 	if prompts {
-		lstOpts |= list.ListOptionsPrompts
+		lstOpts |= client.ListOptionsPrompts
 	}
 	if resources {
-		lstOpts |= list.ListOptionsResources
+		lstOpts |= client.ListOptionsResources
 	}
 
-	var lst *list.ListOutput
+	var lst *client.ListOutput
 	var err error
 	if len(args) > 0 {
-		lst, err = list.Local(ctx, args[0], args[1:], lstOpts)
+		lst, err = client.ListLocal(ctx, args[0], args[1:], lstOpts)
 	} else {
-		lst, err = list.Remote(ctx, url, apiKey, header, sse, lstOpts)
+		lst, err = client.ListRemote(ctx, url, apiKey, header, sse, lstOpts)
 	}
 	if err != nil && ctx.Err() == nil {
 		fatal(err)
@@ -75,7 +75,7 @@ func listCmd() {
 	}
 }
 
-func printJSON(lst *list.ListOutput) {
+func printJSON(lst *client.ListOutput) {
 	buf, err := json.MarshalIndent(lst, "", "  ")
 	if err != nil {
 		fatal(err)
@@ -83,7 +83,7 @@ func printJSON(lst *list.ListOutput) {
 	fmt.Println(string(buf))
 }
 
-func printText(lst *list.ListOutput, verbose bool) {
+func printText(lst *client.ListOutput, verbose bool) {
 	if len(lst.Tools) > 0 {
 		fmt.Println("Tools:")
 		for _, t := range lst.Tools {

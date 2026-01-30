@@ -1,4 +1,4 @@
-package list
+package client
 
 import (
 	"context"
@@ -6,8 +6,6 @@ import (
 	"os/exec"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/leftmike/gmcpt/client"
 )
 
 type ListOptions uint
@@ -32,7 +30,7 @@ var (
 	}
 )
 
-func Local(ctx context.Context, cmd string, args []string, lstOpts ListOptions) (*ListOutput,
+func ListLocal(ctx context.Context, cmd string, args []string, lstOpts ListOptions) (*ListOutput,
 	error) {
 
 	sess, err := mcp.NewClient(&listImpl, nil).Connect(ctx,
@@ -47,10 +45,10 @@ func Local(ctx context.Context, cmd string, args []string, lstOpts ListOptions) 
 	return list(ctx, sess, lstOpts)
 }
 
-func Remote(ctx context.Context, url, apiKey, header string, sse bool,
+func ListRemote(ctx context.Context, url, apiKey, header string, sse bool,
 	lstOpts ListOptions) (*ListOutput, error) {
 
-	sm := client.NewSessionManager(url, apiKey, header, sse)
+	sm := NewSessionManager(url, apiKey, header, sse)
 
 	var lst *ListOutput
 	err := sm.WithSession(ctx,
