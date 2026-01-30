@@ -624,27 +624,24 @@ func TestWithSessionRetrySuccess(t *testing.T) {
 	defer svr.Close()
 
 	prx := NewProxy(svr.URL+"/mcp", "", "", false)
-	prx.retry = true
+	prx.sm.Retry = true
 
-	err := prx.withSession(context.Background(),
+	err := prx.sm.WithSession(context.Background(), prx.clnt,
 		func(ctx context.Context, sess *mcp.ClientSession) error {
 			success = true
 			return nil
 		})
 	if err != nil {
-		t.Errorf("withSession() failed with %s", err)
+		t.Errorf("WithSession() failed with %s", err)
 	} else {
 		if !failed {
 			t.Error("server never failed")
 		}
 		if !success {
-			t.Error("withSession() session never established")
-		}
-		if prx.sess == nil {
-			t.Error("withSession() prx.sess == nil")
+			t.Error("WithSession() session never established")
 		}
 
-		prx.sess.Close()
+		prx.sm.Close()
 	}
 }
 
@@ -655,17 +652,17 @@ func TestWithSessionRetryContextCancel(t *testing.T) {
 	defer svr.Close()
 
 	prx := NewProxy(svr.URL+"/mcp", "", "", false)
-	prx.retry = true
+	prx.sm.Retry = true
 
 	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	err := prx.withSession(ctx,
+	err := prx.sm.WithSession(ctx, prx.clnt,
 		func(ctx context.Context, sess *mcp.ClientSession) error {
-			t.Error("withSession() should not call with")
+			t.Error("WithSession() should not call with")
 			return nil
 		})
 
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("withSession() got %s want %s", err, context.DeadlineExceeded)
+		t.Errorf("WithSession() got %s want %s", err, context.DeadlineExceeded)
 	}
 }
 
