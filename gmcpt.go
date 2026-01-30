@@ -75,7 +75,7 @@ func proxyCmd() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: gmcpt proxy")
+	fmt.Fprintln(os.Stderr, "usage: gmcpt <proxy | list>")
 	os.Exit(1)
 }
 
@@ -87,6 +87,8 @@ func main() {
 	switch os.Args[1] {
 	case "proxy":
 		proxyCmd()
+	case "list":
+		listCmd()
 	default:
 		usage()
 	}
