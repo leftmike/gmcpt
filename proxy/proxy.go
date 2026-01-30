@@ -52,10 +52,16 @@ func (prx *Proxy) Close() {
 	}
 }
 
+func (prx *Proxy) withSession(ctx context.Context,
+	with func(ctx context.Context, sess *mcp.ClientSession) error) error {
+
+	return prx.sm.WithSession(ctx, prx.clnt, with)
+}
+
 func (prx *Proxy) toolListChanged(ctx context.Context, req *mcp.ToolListChangedRequest) {
 	slog.Info("tool list changed")
 
-	err := prx.sm.WithSession(ctx, prx.clnt, prx.updateTools)
+	err := prx.withSession(ctx, prx.updateTools)
 	if err != nil {
 		slog.Error("update tools", "error", err.Error())
 		panic(fmt.Sprintf("unabled to update tools after tool list changed notification: %s", err))
@@ -98,7 +104,7 @@ func (prx *Proxy) updateTools(ctx context.Context, sess *mcp.ClientSession) erro
 func (prx *Proxy) toolHandler(name string) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var ret *mcp.CallToolResult
-		err := prx.sm.WithSession(ctx, prx.clnt,
+		err := prx.withSession(ctx,
 			func(ctx context.Context, sess *mcp.ClientSession) error {
 				var args map[string]any
 				if len(req.Params.Arguments) > 0 {
@@ -131,7 +137,7 @@ func (prx *Proxy) toolHandler(name string) mcp.ToolHandler {
 func (prx *Proxy) promptListChanged(ctx context.Context, req *mcp.PromptListChangedRequest) {
 	slog.Info("prompt list changed")
 
-	err := prx.sm.WithSession(ctx, prx.clnt, prx.updatePrompts)
+	err := prx.withSession(ctx, prx.updatePrompts)
 	if err != nil {
 		slog.Error("update prompts", "error", err)
 		panic(fmt.Sprintf("unabled to update prompts after prompt list changed notification: %s",
@@ -175,7 +181,7 @@ func (prx *Proxy) updatePrompts(ctx context.Context, sess *mcp.ClientSession) er
 func (prx *Proxy) promptHandler(name string) mcp.PromptHandler {
 	return func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		var ret *mcp.GetPromptResult
-		err := prx.sm.WithSession(ctx, prx.clnt,
+		err := prx.withSession(ctx,
 			func(ctx context.Context, sess *mcp.ClientSession) error {
 				var err error
 				ret, err = sess.GetPrompt(ctx, &mcp.GetPromptParams{
@@ -200,7 +206,7 @@ func (prx *Proxy) promptHandler(name string) mcp.PromptHandler {
 func (prx *Proxy) resourceListChanged(ctx context.Context, req *mcp.ResourceListChangedRequest) {
 	slog.Info("resource list changed")
 
-	err := prx.sm.WithSession(ctx, prx.clnt, prx.updateResources)
+	err := prx.withSession(ctx, prx.updateResources)
 	if err != nil {
 		slog.Error("update resources", "error", err)
 		panic(fmt.Sprintf(
@@ -244,7 +250,7 @@ func (prx *Proxy) updateResources(ctx context.Context, sess *mcp.ClientSession) 
 func (prx *Proxy) resourceHandler(uri string) mcp.ResourceHandler {
 	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		var ret *mcp.ReadResourceResult
-		err := prx.sm.WithSession(ctx, prx.clnt,
+		err := prx.withSession(ctx,
 			func(ctx context.Context, sess *mcp.ClientSession) error {
 				var err error
 				ret, err = sess.ReadResource(ctx, &mcp.ReadResourceParams{
@@ -295,7 +301,7 @@ func (prx *Proxy) Run(ctx context.Context, l *slog.Logger, logProto string) erro
 }
 
 func (prx *Proxy) run(ctx context.Context, l *slog.Logger, t mcp.Transport) error {
-	err := prx.sm.WithSession(ctx, prx.clnt, prx.initializeResult)
+	err := prx.withSession(ctx, prx.initializeResult)
 	if err != nil {
 		return err
 	}
@@ -310,21 +316,21 @@ func (prx *Proxy) run(ctx context.Context, l *slog.Logger, t mcp.Transport) erro
 	// ir.Capabilities.Logging
 
 	if prx.ir.Capabilities.Resources != nil {
-		err := prx.sm.WithSession(ctx, prx.clnt, prx.updateResources)
+		err := prx.withSession(ctx, prx.updateResources)
 		if err != nil {
 			return err
 		}
 	}
 
 	if prx.ir.Capabilities.Tools != nil {
-		err := prx.sm.WithSession(ctx, prx.clnt, prx.updateTools)
+		err := prx.withSession(ctx, prx.updateTools)
 		if err != nil {
 			return err
 		}
 	}
 
 	if prx.ir.Capabilities.Prompts != nil {
-		err := prx.sm.WithSession(ctx, prx.clnt, prx.updatePrompts)
+		err := prx.withSession(ctx, prx.updatePrompts)
 		if err != nil {
 			return err
 		}
