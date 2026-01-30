@@ -273,7 +273,6 @@ func (prx *Proxy) initializeResult(ctx context.Context, sess *mcp.ClientSession)
 		"server_version", ir.ServerInfo.Version, "server_website", ir.ServerInfo.WebsiteURL)
 
 	prx.ir = ir
-	prx.sm.Retry = true
 	return nil
 }
 

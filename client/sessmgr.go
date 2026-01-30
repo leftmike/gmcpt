@@ -16,7 +16,7 @@ type SessionManager struct {
 	sse    bool
 
 	sess  *mcp.ClientSession
-	Retry bool
+	retry bool
 }
 
 func NewSessionManager(url, apiKey, header string, sse bool) SessionManager {
@@ -57,7 +57,7 @@ func (sm *SessionManager) WithSession(ctx context.Context, clnt *mcp.Client,
 			sm.sess, err = clnt.Connect(ctx, sm.transport(), nil)
 			if err == nil {
 				break
-			} else if !sm.Retry {
+			} else if !sm.retry {
 				return err
 			}
 
@@ -72,6 +72,7 @@ func (sm *SessionManager) WithSession(ctx context.Context, clnt *mcp.Client,
 		}
 	}
 
+	sm.retry = true
 	return with(ctx, sm.sess)
 }
 
