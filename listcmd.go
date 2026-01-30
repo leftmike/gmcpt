@@ -5,20 +5,17 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 
 	"github.com/leftmike/gmcpt/client"
 )
 
-func listCmd() {
-	var logFlag bool
-	var logfile, url, apiKey, header string
-	var sse, verbose, tools, prompts, resources, asJSON bool
+func listCmd(fs *flag.FlagSet, parse func() ([]string, *slog.Logger)) {
+	var url, apiKey, header string
+	var sse, verbose, tools, prompts, resources, json bool
 
-	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
-	fs.BoolVar(&logFlag, "log", false, "enable logging")
-	fs.StringVar(&logfile, "logfile", "", "log file path")
 	fs.StringVar(&url, "url", "", "remote MCP server URL")
 	fs.StringVar(&apiKey, "api-key", "", "API key for remote server")
 	fs.StringVar(&header, "header", "", "header for API key")
@@ -27,21 +24,12 @@ func listCmd() {
 	fs.BoolVar(&tools, "tools", false, "list tools")
 	fs.BoolVar(&prompts, "prompts", false, "list prompts")
 	fs.BoolVar(&resources, "resources", false, "list resources")
-	fs.BoolVar(&asJSON, "json", false, "output as JSON")
-	fs.Parse(os.Args[2:])
+	fs.BoolVar(&json, "json", false, "output as JSON")
 
-	args := fs.Args()
-	if url == "" && len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "%s %s: specify -url or a command\n", os.Args[0], os.Args[1])
-		os.Exit(1)
+	args, _ := parse()
+	if (url == "" && len(args) == 0) || (url != "" && len(args) > 0) {
+		fatal("exactly one of -url or a command must be specified")
 	}
-	if url != "" && len(args) > 0 {
-		fmt.Fprintf(os.Stderr, "%s %s: specify -url or a command, not both\n",
-			os.Args[0], os.Args[1])
-		os.Exit(1)
-	}
-
-	setupLogging(logFlag, logfile)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -65,25 +53,25 @@ func listCmd() {
 		lst, err = client.ListRemote(ctx, url, apiKey, header, sse, lstOpts)
 	}
 	if err != nil && ctx.Err() == nil {
-		fatal(err)
+		fatal(err.Error())
 	}
 
-	if asJSON {
-		printJSON(lst)
+	if json {
+		listJSON(lst)
 	} else {
-		printText(lst, verbose)
+		listText(lst, verbose)
 	}
 }
 
-func printJSON(lst *client.ListOutput) {
+func listJSON(lst *client.ListOutput) {
 	buf, err := json.MarshalIndent(lst, "", "  ")
 	if err != nil {
-		fatal(err)
+		fatal(err.Error())
 	}
 	fmt.Println(string(buf))
 }
 
-func printText(lst *client.ListOutput, verbose bool) {
+func listText(lst *client.ListOutput, verbose bool) {
 	if len(lst.Tools) > 0 {
 		fmt.Println("Tools:")
 		for _, t := range lst.Tools {
