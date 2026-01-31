@@ -86,19 +86,33 @@ func printJSONList(lst *client.ListOutput) {
 	}
 	fmt.Println(string(buf))
 }
+func singleLine(s string, l int) string {
+	s, _, _ = strings.Cut(s, "\n")
+	rs := []rune(s)
+	if len(rs) > l {
+		return string(rs[:l])
+	}
+	return s
+}
+
+func printWithPrefix(prefix, s string) {
+	lines := strings.Split(s, "\n")
+	for _, l := range lines {
+		fmt.Print(prefix)
+		fmt.Println(l)
+	}
+}
 
 func printPromptList(lst *client.ListOutput, view string) {
 	fmt.Println("---- Prompts ----")
 	for _, prpt := range lst.Prompts {
-		switch view {
-		case "brief":
+		if view == "brief" {
 			if prpt.Title != "" {
 				fmt.Printf("    %s (%s)\n", prpt.Title, prpt.Name)
 			} else {
 				fmt.Printf("    %s\n", prpt.Name)
 			}
-
-		case "summary":
+		} else { // view == "summary" || view == "detailed"
 			if prpt.Title != "" {
 				fmt.Printf("    %s\n", prpt.Title)
 			}
@@ -119,14 +133,13 @@ func printPromptList(lst *client.ListOutput, view string) {
 			}
 			fmt.Println()
 			if prpt.Description != "" {
-				// XXX: first line or first 70 characters of the description
-				lines := strings.Split(prpt.Description, "\n")
-				fmt.Printf("    %s\n", lines[0])
+				if view == "detailed" {
+					printWithPrefix("    ", prpt.Description)
+				} else { // view == "summary"
+					fmt.Printf("    %s\n", singleLine(prpt.Description, 70))
+				}
 			}
 			fmt.Println()
-
-		case "detailed":
-			// XXX: same as summary, but the full description
 		}
 	}
 }
@@ -134,15 +147,13 @@ func printPromptList(lst *client.ListOutput, view string) {
 func printResourceList(lst *client.ListOutput, view string) {
 	fmt.Println("---- Resources ----")
 	for _, rsc := range lst.Resources {
-		switch view {
-		case "brief":
+		if view == "brief" {
 			if rsc.Title != "" {
 				fmt.Printf("    %s (%s)\n", rsc.Title, rsc.Name)
 			} else {
 				fmt.Printf("    %s\n", rsc.Name)
 			}
-
-		case "summary", "detailed":
+		} else { // view == "summary" || view == "detailed"
 			if rsc.Title != "" {
 				fmt.Printf("    %s\n", rsc.Title)
 			}
@@ -158,14 +169,10 @@ func printResourceList(lst *client.ListOutput, view string) {
 				fmt.Printf("    %s\n", rsc.URI)
 			}
 			if rsc.Description != "" {
-				lines := strings.Split(rsc.Description, "\n")
 				if view == "detailed" {
-					for _, l := range lines {
-						fmt.Printf("    %s\n", l)
-					}
+					printWithPrefix("    ", rsc.Description)
 				} else { // view == "summary"
-					// XXX: first line or first 70 characters of the description
-					fmt.Printf("    %s\n", lines[0])
+					fmt.Printf("    %s\n", singleLine(rsc.Description, 70))
 				}
 			}
 			fmt.Println()
@@ -222,8 +229,7 @@ func schemaToArgs(sch any) ([]string, []string, []bool) {
 func printToolList(lst *client.ListOutput, view string) {
 	fmt.Println("---- Tools ----")
 	for _, tl := range lst.Tools {
-		switch view {
-		case "brief":
+		if view == "brief" {
 			if tl.Title != "" {
 				fmt.Printf("    %s (%s)\n", tl.Title, tl.Name)
 			} else if tl.Annotations != nil && tl.Annotations.Title != "" {
@@ -231,8 +237,7 @@ func printToolList(lst *client.ListOutput, view string) {
 			} else {
 				fmt.Printf("    %s\n", tl.Name)
 			}
-
-		case "summary":
+		} else { // view == "summary" || view == "detailed"
 			if tl.Title != "" {
 				fmt.Printf("    %s\n", tl.Title)
 			}
@@ -253,23 +258,34 @@ func printToolList(lst *client.ListOutput, view string) {
 			}
 			// XXX tl.OutputSchema
 			fmt.Println(")")
+			if view == "summary" {
+				if tl.Description != "" {
+					fmt.Printf("    %s\n", singleLine(tl.Description, 70))
+				}
+			} else { // view == "detailed"
+				if tl.Description != "" {
+					printWithPrefix("    ", tl.Description)
+				}
 
-		case "detailed":
-			// XXX
-			/*
-				if tl.InputSchema != nil {
-					buf, err := json.Marshal(tl.InputSchema)
-					if err == nil && string(buf) != "{}" {
-						fmt.Printf("    Input: %s\n", buf)
+				// XXX: pretty print InputSchema
+				// XXX: pretty print OutputSchema
+
+				/*
+					if tl.InputSchema != nil {
+						buf, err := json.Marshal(tl.InputSchema)
+						if err == nil && string(buf) != "{}" {
+							fmt.Printf("    Input: %s\n", buf)
+						}
 					}
-				}
-				if tl.OutputSchema != nil {
-					buf, err := json.Marshal(tl.OutputSchema)
-					if err == nil && string(buf) != "{}" {
-						fmt.Printf("    Output: %s\n", buf)
+					if tl.OutputSchema != nil {
+						buf, err := json.Marshal(tl.OutputSchema)
+						if err == nil && string(buf) != "{}" {
+							fmt.Printf("    Output: %s\n", buf)
+						}
 					}
-				}
-			*/
+				*/
+			}
+			fmt.Println()
 		}
 	}
 }
