@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 
 	"github.com/leftmike/gmcpt/client"
@@ -172,11 +173,50 @@ func printResourceList(lst *client.ListOutput, view string) {
 	}
 }
 
-// schemaToArgs converts a JSON schema into slices of argument names, argument types, and
-// whether the argument is required.
 func schemaToArgs(sch any) ([]string, []string, []bool) {
-	// XXX
-	return nil, nil, nil
+	schema, ok := sch.(map[string]any)
+	if !ok {
+		return nil, nil, nil
+	}
+
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return nil, nil, nil
+	}
+
+	names := make([]string, 0, len(props))
+	types := make([]string, 0, len(props))
+	for k, v := range props {
+		names = append(names, k)
+
+		typ := "any"
+		if val, ok := v.(map[string]any); ok {
+			if s, ok := val["type"].(string); ok {
+				typ = s
+				if s == "array" {
+					if items, ok := val["items"].(map[string]any); ok {
+						if s, ok := items["type"].(string); ok {
+							typ = s + "[]"
+						}
+					}
+				}
+			}
+		}
+		types = append(types, typ)
+	}
+
+	required := make([]bool, len(names))
+	if val, ok := schema["required"].([]any); ok {
+		for _, item := range val {
+			if name, ok := item.(string); ok {
+				if i := slices.Index(names, name); i >= 0 {
+					required[i] = true
+				}
+			}
+		}
+	}
+
+	return names, types, required
 }
 
 func printToolList(lst *client.ListOutput, view string) {
@@ -200,15 +240,15 @@ func printToolList(lst *client.ListOutput, view string) {
 				fmt.Printf("    %s\n", tl.Annotations.Title)
 			}
 			fmt.Printf("    %s(", tl.Name)
-			args, types, reqs := schemaToArgs(tl.InputSchema)
+			args, types, required := schemaToArgs(tl.InputSchema)
 			for i := range args {
 				if i > 0 {
 					fmt.Print(", ")
 				}
-				if reqs[i] {
+				if required[i] {
 					fmt.Printf("%s %s", args[i], types[i])
 				} else {
-					fmt.Printf("[%s %s]", args[i], types[i])
+					fmt.Printf("{%s %s}", args[i], types[i])
 				}
 			}
 			// XXX tl.OutputSchema
