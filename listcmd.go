@@ -90,16 +90,22 @@ func singleLine(s string, l int) string {
 	s, _, _ = strings.Cut(s, "\n")
 	rs := []rune(s)
 	if len(rs) > l {
-		return string(rs[:l])
+		return string(rs[:l]) + "..."
 	}
 	return s
 }
 
-func printWithPrefix(prefix, s string) {
+func printWithPrefix(prefix, s string, n int) {
 	lines := strings.Split(s, "\n")
-	for _, l := range lines {
+	for i, l := range lines {
+		if i == n {
+			fmt.Print(prefix)
+			fmt.Println("...")
+			break
+		}
+
 		fmt.Print(prefix)
-		fmt.Println(l)
+		fmt.Println(strings.TrimSpace(l))
 	}
 }
 
@@ -134,7 +140,7 @@ func printPromptList(lst *client.ListOutput, view string) {
 			fmt.Println()
 			if prpt.Description != "" {
 				if view == "detailed" {
-					printWithPrefix("    ", prpt.Description)
+					printWithPrefix("    ", prpt.Description, 5)
 				} else { // view == "summary"
 					fmt.Printf("    %s\n", singleLine(prpt.Description, 70))
 				}
@@ -170,7 +176,7 @@ func printResourceList(lst *client.ListOutput, view string) {
 			}
 			if rsc.Description != "" {
 				if view == "detailed" {
-					printWithPrefix("    ", rsc.Description)
+					printWithPrefix("    ", rsc.Description, 5)
 				} else { // view == "summary"
 					fmt.Printf("    %s\n", singleLine(rsc.Description, 70))
 				}
@@ -264,26 +270,20 @@ func printToolList(lst *client.ListOutput, view string) {
 				}
 			} else { // view == "detailed"
 				if tl.Description != "" {
-					printWithPrefix("    ", tl.Description)
+					printWithPrefix("    ", tl.Description, 5)
 				}
-
-				// XXX: pretty print InputSchema
-				// XXX: pretty print OutputSchema
-
-				/*
-					if tl.InputSchema != nil {
-						buf, err := json.Marshal(tl.InputSchema)
-						if err == nil && string(buf) != "{}" {
-							fmt.Printf("    Input: %s\n", buf)
-						}
+				if tl.InputSchema != nil {
+					buf, err := json.MarshalIndent(tl.InputSchema, "    ", "    ")
+					if err == nil {
+						fmt.Printf("    %s\n", string(buf))
 					}
-					if tl.OutputSchema != nil {
-						buf, err := json.Marshal(tl.OutputSchema)
-						if err == nil && string(buf) != "{}" {
-							fmt.Printf("    Output: %s\n", buf)
-						}
+				}
+				if tl.OutputSchema != nil {
+					buf, err := json.MarshalIndent(tl.OutputSchema, "    ", "    ")
+					if err == nil {
+						fmt.Printf("    %s\n", string(buf))
 					}
-				*/
+				}
 			}
 			fmt.Println()
 		}
