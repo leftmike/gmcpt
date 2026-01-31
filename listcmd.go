@@ -8,25 +8,29 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/leftmike/gmcpt/client"
 )
 
 func listCmd(fs *flag.FlagSet, parse func() ([]string, *slog.Logger)) {
-	var url, apiKey, header string
-	var sse, verbose, tools, prompts, resources, json bool
+	var url, apiKey, header, view string
+	var sse, prompts, resources, tools, json bool
 
 	fs.StringVar(&url, "url", "", "remote MCP server URL")
 	fs.StringVar(&apiKey, "api-key", "", "API key for remote server")
 	fs.StringVar(&header, "header", "", "header for API key")
 	fs.BoolVar(&sse, "sse", false, "use SSE transport")
-	fs.BoolVar(&verbose, "v", false, "verbose text output")
-	fs.BoolVar(&tools, "tools", false, "list tools")
+	fs.StringVar(&view, "view", "brief", "view mode: brief, summary, or detailed")
 	fs.BoolVar(&prompts, "prompts", false, "list prompts")
 	fs.BoolVar(&resources, "resources", false, "list resources")
+	fs.BoolVar(&tools, "tools", false, "list tools")
 	fs.BoolVar(&json, "json", false, "output as JSON")
 
 	args, _ := parse()
+	if view != "brief" && view != "summary" && view != "detailed" {
+		fatal("view must be brief, summary, or detailed")
+	}
 	if (url == "" && len(args) == 0) || (url != "" && len(args) > 0) {
 		fatal("exactly one of -url or a command must be specified")
 	}
@@ -35,14 +39,17 @@ func listCmd(fs *flag.FlagSet, parse func() ([]string, *slog.Logger)) {
 	defer cancel()
 
 	var lstOpts client.ListOptions
-	if tools {
-		lstOpts |= client.ListOptionsTools
-	}
 	if prompts {
-		lstOpts |= client.ListOptionsPrompts
+		lstOpts |= client.ListPrompts
 	}
 	if resources {
-		lstOpts |= client.ListOptionsResources
+		lstOpts |= client.ListResources
+	}
+	if tools {
+		lstOpts |= client.ListTools
+	}
+	if lstOpts == 0 {
+		lstOpts = client.ListTools | client.ListPrompts | client.ListResources
 	}
 
 	var lst *client.ListOutput
@@ -57,13 +64,21 @@ func listCmd(fs *flag.FlagSet, parse func() ([]string, *slog.Logger)) {
 	}
 
 	if json {
-		listJSON(lst)
+		printJSONList(lst)
 	} else {
-		listText(lst, verbose)
+		if lstOpts&client.ListPrompts != 0 {
+			printPromptList(lst, view)
+		}
+		if lstOpts&client.ListResources != 0 {
+			printResourceList(lst, view)
+		}
+		if lstOpts&client.ListTools != 0 {
+			printToolList(lst, view)
+		}
 	}
 }
 
-func listJSON(lst *client.ListOutput) {
+func printJSONList(lst *client.ListOutput) {
 	buf, err := json.MarshalIndent(lst, "", "  ")
 	if err != nil {
 		fatal(err.Error())
@@ -71,66 +86,150 @@ func listJSON(lst *client.ListOutput) {
 	fmt.Println(string(buf))
 }
 
-func listText(lst *client.ListOutput, verbose bool) {
-	if len(lst.Tools) > 0 {
-		fmt.Println("Tools:")
-		for _, t := range lst.Tools {
-			fmt.Printf("  %s\n", t.Name)
-			if !verbose {
-				continue
+func printPromptList(lst *client.ListOutput, view string) {
+	fmt.Println("---- Prompts ----")
+	for _, prpt := range lst.Prompts {
+		switch view {
+		case "brief":
+			if prpt.Title != "" {
+				fmt.Printf("    %s (%s)\n", prpt.Title, prpt.Name)
+			} else {
+				fmt.Printf("    %s\n", prpt.Name)
 			}
-			if t.Description != "" {
-				fmt.Printf("    %s\n", t.Description)
+
+		case "summary":
+			if prpt.Title != "" {
+				fmt.Printf("    %s\n", prpt.Title)
 			}
-			if t.InputSchema != nil {
-				buf, err := json.Marshal(t.InputSchema)
-				if err == nil && string(buf) != "{}" {
-					fmt.Printf("    Input: %s\n", buf)
+			fmt.Printf("    %s", prpt.Name)
+			if len(prpt.Arguments) > 0 {
+				fmt.Print("(")
+				for i, arg := range prpt.Arguments {
+					if i > 0 {
+						fmt.Print(", ")
+					}
+					if arg.Required {
+						fmt.Print(arg.Name)
+					} else {
+						fmt.Printf("[%s]", arg.Name)
+					}
 				}
+				fmt.Print(")")
 			}
+			fmt.Println()
+			if prpt.Description != "" {
+				// XXX: first line or first 70 characters of the description
+				lines := strings.Split(prpt.Description, "\n")
+				fmt.Printf("    %s\n", lines[0])
+			}
+			fmt.Println()
+
+		case "detailed":
+			// XXX: same as summary, but the full description
 		}
 	}
+}
 
-	if len(lst.Prompts) > 0 {
-		fmt.Println("Prompts:")
-		for _, p := range lst.Prompts {
-			fmt.Printf("  %s\n", p.Name)
-			if !verbose {
-				continue
+func printResourceList(lst *client.ListOutput, view string) {
+	fmt.Println("---- Resources ----")
+	for _, rsc := range lst.Resources {
+		switch view {
+		case "brief":
+			if rsc.Title != "" {
+				fmt.Printf("    %s (%s)\n", rsc.Title, rsc.Name)
+			} else {
+				fmt.Printf("    %s\n", rsc.Name)
 			}
-			if p.Description != "" {
-				fmt.Printf("    %s\n", p.Description)
+
+		case "summary", "detailed":
+			if rsc.Title != "" {
+				fmt.Printf("    %s\n", rsc.Title)
 			}
-			if len(p.Arguments) > 0 {
-				fmt.Println("    Arguments:")
-				for _, a := range p.Arguments {
-					req := ""
-					if a.Required {
-						req = " (required)"
+			fmt.Printf("    %s", rsc.Name)
+			if rsc.Size > 0 {
+				fmt.Printf(" %d", rsc.Size)
+			}
+			if rsc.MIMEType != "" {
+				fmt.Printf(" %s", rsc.MIMEType)
+			}
+			fmt.Println()
+			if rsc.URI != "" {
+				fmt.Printf("    %s\n", rsc.URI)
+			}
+			if rsc.Description != "" {
+				lines := strings.Split(rsc.Description, "\n")
+				if view == "detailed" {
+					for _, l := range lines {
+						fmt.Printf("    %s\n", l)
 					}
-					desc := ""
-					if a.Description != "" {
-						desc = " - " + a.Description
-					}
-					fmt.Printf("      %s%s%s\n", a.Name, req, desc)
+				} else { // view == "summary"
+					// XXX: first line or first 70 characters of the description
+					fmt.Printf("    %s\n", lines[0])
 				}
 			}
+			fmt.Println()
 		}
 	}
+}
 
-	if len(lst.Resources) > 0 {
-		fmt.Println("Resources:")
-		for _, r := range lst.Resources {
-			fmt.Printf("  %s (%s)\n", r.Name, r.URI)
-			if !verbose {
-				continue
+// schemaToArgs converts a JSON schema into slices of argument names, argument types, and
+// whether the argument is required.
+func schemaToArgs(sch any) ([]string, []string, []bool) {
+	// XXX
+	return nil, nil, nil
+}
+
+func printToolList(lst *client.ListOutput, view string) {
+	fmt.Println("---- Tools ----")
+	for _, tl := range lst.Tools {
+		switch view {
+		case "brief":
+			if tl.Title != "" {
+				fmt.Printf("    %s (%s)\n", tl.Title, tl.Name)
+			} else if tl.Annotations != nil && tl.Annotations.Title != "" {
+				fmt.Printf("    %s (%s)\n", tl.Annotations.Title, tl.Name)
+			} else {
+				fmt.Printf("    %s\n", tl.Name)
 			}
-			if r.Description != "" {
-				fmt.Printf("    %s\n", r.Description)
+
+		case "summary":
+			if tl.Title != "" {
+				fmt.Printf("    %s\n", tl.Title)
 			}
-			if r.MIMEType != "" {
-				fmt.Printf("    MIME: %s\n", r.MIMEType)
+			if tl.Annotations != nil && tl.Annotations.Title != "" {
+				fmt.Printf("    %s\n", tl.Annotations.Title)
 			}
+			fmt.Printf("    %s(", tl.Name)
+			args, types, reqs := schemaToArgs(tl.InputSchema)
+			for i := range args {
+				if i > 0 {
+					fmt.Print(", ")
+				}
+				if reqs[i] {
+					fmt.Printf("%s %s", args[i], types[i])
+				} else {
+					fmt.Printf("[%s %s]", args[i], types[i])
+				}
+			}
+			// XXX tl.OutputSchema
+			fmt.Println(")")
+
+		case "detailed":
+			// XXX
+			/*
+				if tl.InputSchema != nil {
+					buf, err := json.Marshal(tl.InputSchema)
+					if err == nil && string(buf) != "{}" {
+						fmt.Printf("    Input: %s\n", buf)
+					}
+				}
+				if tl.OutputSchema != nil {
+					buf, err := json.Marshal(tl.OutputSchema)
+					if err == nil && string(buf) != "{}" {
+						fmt.Printf("    Output: %s\n", buf)
+					}
+				}
+			*/
 		}
 	}
 }

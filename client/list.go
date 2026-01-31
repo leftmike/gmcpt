@@ -11,16 +11,15 @@ import (
 type ListOptions uint
 
 const (
-	ListOptionsTools ListOptions = 1 << iota
-	ListOptionsPrompts
-	ListOptionsResources
-	ListOptionsAll = ListOptionsTools | ListOptionsPrompts | ListOptionsResources
+	ListPrompts ListOptions = 1 << iota
+	ListResources
+	ListTools
 )
 
 type ListOutput struct {
-	Tools     []*mcp.Tool     `json:"tools,omitempty"`
 	Prompts   []*mcp.Prompt   `json:"prompts,omitempty"`
 	Resources []*mcp.Resource `json:"resources,omitempty"`
+	Tools     []*mcp.Tool     `json:"tools,omitempty"`
 }
 
 var (
@@ -62,22 +61,10 @@ func ListRemote(ctx context.Context, url, apiKey, header string, sse bool,
 }
 
 func list(ctx context.Context, sess *mcp.ClientSession, lstOpts ListOptions) (*ListOutput, error) {
-	if lstOpts == 0 {
-		lstOpts = ListOptionsAll
-	}
-
 	ir := sess.InitializeResult()
 	var lst ListOutput
 
-	if lstOpts&ListOptionsTools != 0 && ir.Capabilities.Tools != nil {
-		ret, err := sess.ListTools(ctx, nil)
-		if err != nil {
-			return nil, fmt.Errorf("listing tools: %s", err)
-		}
-		lst.Tools = ret.Tools
-	}
-
-	if lstOpts&ListOptionsPrompts != 0 && ir.Capabilities.Prompts != nil {
+	if lstOpts&ListPrompts != 0 && ir.Capabilities.Prompts != nil {
 		ret, err := sess.ListPrompts(ctx, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing prompts: %s", err)
@@ -85,12 +72,20 @@ func list(ctx context.Context, sess *mcp.ClientSession, lstOpts ListOptions) (*L
 		lst.Prompts = ret.Prompts
 	}
 
-	if lstOpts&ListOptionsResources != 0 && ir.Capabilities.Resources != nil {
+	if lstOpts&ListResources != 0 && ir.Capabilities.Resources != nil {
 		ret, err := sess.ListResources(ctx, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing resources: %s", err)
 		}
 		lst.Resources = ret.Resources
+	}
+
+	if lstOpts&ListTools != 0 && ir.Capabilities.Tools != nil {
+		ret, err := sess.ListTools(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("listing tools: %s", err)
+		}
+		lst.Tools = ret.Tools
 	}
 
 	return &lst, nil
