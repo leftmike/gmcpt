@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -165,11 +166,8 @@ func validateListOutput(lst *ListOutput, prompts, resources, tools []string) ([]
 }
 
 func TestListRemoteServers(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping TestListRemoteServers")
-	}
-
 	cases := []struct {
+		short     bool
 		url       string
 		sse       bool
 		prompts   []string
@@ -182,13 +180,51 @@ func TestListRemoteServers(t *testing.T) {
 				"aws___read_documentation", "aws___recommend", "aws___search_documentation"},
 		},
 		{
-			url: "https://docs.mcp.cloudflare.com/sse", sse: true,
+			short:   true,
+			url:     "https://docs.mcp.cloudflare.com/sse",
+			sse:     true,
 			prompts: []string{"workers-prompt-full"},
 			tools:   []string{"migrate_pages_to_workers_guide", "search_cloudflare_documentation"},
+		},
+		{
+			short:     true,
+			url:       "https://mcp.exa.ai/mcp",
+			prompts:   []string{"code_search_help", "web_search_help"},
+			resources: []string{"tools_list"},
+			tools:     []string{"company_research_exa", "get_code_context_exa", "web_search_exa"},
+		},
+		{
+			url:     "https://hf.co/mcp",
+			prompts: []string{"Dataset Details", "Model Details", "Paper Summary", "User Summary"},
+			tools: []string{"dataset_search", "gr1_z_image_turbo_generate", "hf_doc_fetch",
+				"hf_doc_search", "hf_whoami", "hub_repo_details", "model_search", "paper_search",
+				"space_search"},
+		},
+		{
+			url: "https://gitmcp.io/docs",
+			tools: []string{"fetch_generic_documentation", "fetch_generic_url_content",
+				"match_common_libs_owner_repo_mapping", "search_generic_code",
+				"search_generic_documentation"},
+		},
+		{
+			url: "https://mcp.peek.com",
+			tools: []string{"experience_availability", "experience_details", "list_tags",
+				"render_activity_tiles", "search_experiences", "search_regions"},
+		},
+		{
+			url: "https://www.javadocs.dev/mcp",
+			tools: []string{"get_javadoc_content_list", "get_javadoc_symbol_contents",
+				"get_latest_version", "get_source_contents", "list_source_contents",
+				"symbol_to_artifact"},
 		},
 	}
 
 	for _, c := range cases {
+		if testing.Short() && !c.short {
+			fmt.Printf("skipping %s\n", c.url)
+			continue
+		}
+
 		lst, err := ListRemote(context.Background(), c.url, "", "", c.sse,
 			ListTools|ListPrompts|ListResources)
 		if err != nil {
