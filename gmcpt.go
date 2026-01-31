@@ -1,3 +1,11 @@
+/*
+To Do:
+- prompt command to fetch a prompt
+- resource command to read a resource
+- tool command to call a tool
+
+- list command: print prompt arguments in summary and detailed views
+*/
 package main
 
 import (
