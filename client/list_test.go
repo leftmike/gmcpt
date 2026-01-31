@@ -138,6 +138,72 @@ func TestListSelectiveOptions(t *testing.T) {
 	}
 }
 
+func validateListOutput(lst *ListOutput, prompts, resources, tools []string) ([]string, []string,
+	[]string, bool) {
+
+	promptNames := make([]string, len(lst.Prompts))
+	for i, prompt := range lst.Prompts {
+		promptNames[i] = prompt.Name
+	}
+	slices.Sort(promptNames)
+
+	resourceNames := make([]string, len(lst.Resources))
+	for i, resource := range lst.Resources {
+		resourceNames[i] = resource.Name
+	}
+	slices.Sort(resourceNames)
+
+	toolNames := make([]string, len(lst.Tools))
+	for i, tool := range lst.Tools {
+		toolNames[i] = tool.Name
+	}
+	slices.Sort(toolNames)
+
+	return promptNames, resourceNames, toolNames,
+		slices.Equal(toolNames, tools) && slices.Equal(promptNames, prompts) &&
+			slices.Equal(resourceNames, resources)
+}
+
+func TestListRemoteServers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping TestListRemoteServers")
+	}
+
+	cases := []struct {
+		url       string
+		sse       bool
+		prompts   []string
+		resources []string
+		tools     []string
+	}{
+		{
+			url: "https://knowledge-mcp.global.api.aws",
+			tools: []string{"aws___get_regional_availability", "aws___list_regions",
+				"aws___read_documentation", "aws___recommend", "aws___search_documentation"},
+		},
+		{
+			url: "https://docs.mcp.cloudflare.com/sse", sse: true,
+			prompts: []string{"workers-prompt-full"},
+			tools:   []string{"migrate_pages_to_workers_guide", "search_cloudflare_documentation"},
+		},
+	}
+
+	for _, c := range cases {
+		lst, err := ListRemote(context.Background(), c.url, "", "", c.sse,
+			ListTools|ListPrompts|ListResources)
+		if err != nil {
+			t.Errorf("ListRemote(%s) failed: %s", c.url, err)
+		} else {
+			prompts, resources, tools, ok := validateListOutput(lst, c.prompts, c.resources,
+				c.tools)
+			if !ok {
+				t.Errorf("ListRemote(%s)\ngot prompts: %#v resources: %#v tools: %#v\nwant prompts: %#v resources: %#v tools: %#v",
+					c.url, prompts, resources, tools, c.prompts, c.resources, c.tools)
+			}
+		}
+	}
+}
+
 func TestListCapabilitiesFilter(t *testing.T) {
 	tsvr := mcpsvr.NewMCPServer("tools-only-server", "0.1.0",
 		mcpsvr.WithToolCapabilities(true))
