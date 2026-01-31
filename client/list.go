@@ -48,6 +48,7 @@ func ListRemote(ctx context.Context, url, apiKey, header string, sse bool,
 	lstOpts ListOptions) (*ListOutput, error) {
 
 	sm := NewSessionManager(url, apiKey, header, sse)
+	defer sm.Close()
 
 	var lst *ListOutput
 	err := sm.WithSession(ctx,
