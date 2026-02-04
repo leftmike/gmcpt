@@ -5,6 +5,7 @@ To Do:
 - tool command to call a tool
 
 - list command: print prompt arguments in summary and detailed views
+- SessionManager.WithSession: Ping only if session has been used in longer than 250ms
 */
 package main
 
