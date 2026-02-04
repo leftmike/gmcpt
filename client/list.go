@@ -33,9 +33,7 @@ func ListLocal(ctx context.Context, cmd string, args []string, lstOpts ListOptio
 	error) {
 
 	sess, err := mcp.NewClient(&listImpl, nil).Connect(ctx,
-		&mcp.CommandTransport{
-			Command: exec.Command(cmd, args...),
-		}, nil)
+		&mcp.CommandTransport{Command: exec.Command(cmd, args...)}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to command: %s", err)
 	}

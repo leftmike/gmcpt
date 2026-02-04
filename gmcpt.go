@@ -1,9 +1,8 @@
 /*
 To Do:
-- prompt command to fetch a prompt
-- resource command to read a resource
+- prompt_test.go: add tests of actual remote servers
+- resource_test.go: add tests of actual remote servers
 - tool command to call a tool
-
 - list command: print prompt arguments in summary and detailed views
 - SessionManager.WithSession: Ping only if session has been used in longer than 250ms
 */
@@ -14,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 )
 
 func fatal(msg string) {
@@ -44,8 +44,50 @@ func setupLogging(log bool, logfile string) *slog.Logger {
 	return l
 }
 
+type stringArgs []string
+
+func (sa *stringArgs) String() string {
+	return strings.Join(*sa, ", ")
+}
+
+func (sa *stringArgs) Set(val string) error {
+	*sa = append(*sa, val)
+	return nil
+}
+
+func fatalUsage(msg string, fs *flag.FlagSet) {
+	fmt.Fprintf(os.Stderr, "%s %s: %s\n", os.Args[0], os.Args[1], msg)
+	cmdUsage(fs)
+}
+
+func cmdUsage(fs *flag.FlagSet) {
+	fmt.Fprintf(os.Stderr, "Usage of %s %s:\n", os.Args[0], os.Args[1])
+	fs.VisitAll(func(flg *flag.Flag) {
+		fmt.Fprintf(os.Stderr, "    -%s", flg.Name)
+		name, usage := flag.UnquoteUsage(flg)
+		if name != "" {
+			fmt.Fprintf(os.Stderr, " %s", name)
+		}
+		if len(flg.Name) == 1 {
+			fmt.Fprint(os.Stderr, "\t")
+		} else {
+			fmt.Fprint(os.Stderr, "\n    \t")
+		}
+		fmt.Fprintln(os.Stderr, strings.ReplaceAll(usage, "\n", "\n    \t"))
+	})
+	os.Exit(1)
+}
+
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: gmcpt <proxy | list>")
+	fmt.Fprintln(os.Stderr, `Usage of gmcpt:
+gmcpt <command> [arguments]
+
+Commands:
+    list        list prompts, resources, and/or tools
+    prompt      get a prompt
+    proxy       local proxy for a remote mcp server
+    resource    get a resource
+    tool        call a tool`)
 	os.Exit(1)
 }
 
@@ -60,16 +102,23 @@ func main() {
 	fs.BoolVar(&log, "log", false, "enable logging")
 	fs.StringVar(&logfile, "logfile", "", "log file path")
 
-	parse := func() ([]string, *slog.Logger) {
+	parseLogger := func() ([]string, *slog.Logger) {
+		fs.Usage = func() {
+			cmdUsage(fs)
+		}
 		fs.Parse(os.Args[2:])
 		return fs.Args(), setupLogging(log, logfile)
 	}
+	parse := func() []string {
+		args, _ := parseLogger()
+		return args
+	}
 
 	switch os.Args[1] {
+	case "list", "prompt", "resource":
+		clientCmd(os.Args[1], fs, parse)
 	case "proxy":
-		proxyCmd(fs, parse)
-	case "list":
-		listCmd(fs, parse)
+		proxyCmd(fs, parseLogger)
 	default:
 		usage()
 	}
