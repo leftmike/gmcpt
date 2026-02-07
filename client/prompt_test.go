@@ -71,3 +71,58 @@ func TestGetPrompt(t *testing.T) {
 	testGetPrompt(t, "greet", map[string]string{"name": "World"}, "a greeting message")
 	testGetPrompt(t, "help", nil, "help information")
 }
+
+func TestGetPromptRemoteServers(t *testing.T) {
+	cases := []struct {
+		short      bool
+		url        string
+		sse        bool
+		prompt     string
+		promptArgs map[string]string
+	}{
+		{
+			short:  true,
+			url:    "https://docs.mcp.cloudflare.com/sse",
+			sse:    true,
+			prompt: "workers-prompt-full",
+		},
+		{
+			short:      true,
+			url:        "https://hf.co/mcp",
+			prompt:     "Model Details",
+			promptArgs: map[string]string{"model_id": "openai-community/gpt2"},
+		},
+		{
+			url:        "https://hf.co/mcp",
+			prompt:     "Paper Summary",
+			promptArgs: map[string]string{"paper_id": "2502.16161"},
+		},
+		{
+			url:        "https://hf.co/mcp",
+			prompt:     "User Summary",
+			promptArgs: map[string]string{"user_id": "clem"},
+		},
+		{
+			url:        "https://hf.co/mcp",
+			prompt:     "Dataset Details",
+			promptArgs: map[string]string{"dataset_id": "squad"},
+		},
+	}
+
+	for _, c := range cases {
+		if testing.Short() && !c.short {
+			fmt.Printf("skipping %s prompt %s\n", c.url, c.prompt)
+			continue
+		}
+
+		ret, err := GetPromptRemote(context.Background(), c.url, "", "", c.sse, c.prompt,
+			c.promptArgs)
+		if err != nil {
+			t.Errorf("GetPromptRemote(%s, %s) failed: %s", c.url, c.prompt, err)
+		} else {
+			if len(ret.Messages) == 0 {
+				t.Errorf("GetPromptRemote(%s, %s) returned no messages", c.url, c.prompt)
+			}
+		}
+	}
+}
