@@ -15,8 +15,9 @@ type SessionManager struct {
 	header string
 	sse    bool
 
-	sess  *mcp.ClientSession
-	retry bool
+	sess     *mcp.ClientSession
+	retry    bool
+	lastUsed time.Time
 }
 
 func NewSessionManager(url, apiKey, header string, sse bool) SessionManager {
@@ -45,7 +46,9 @@ func (sm *SessionManager) transport() mcp.Transport {
 func (sm *SessionManager) WithSession(ctx context.Context, clnt *mcp.Client,
 	with func(ctx context.Context, sess *mcp.ClientSession) error) error {
 
-	if sm.sess != nil && sm.sess.Ping(ctx, nil) != nil {
+	if sm.sess != nil && time.Since(sm.lastUsed) > 200*time.Millisecond &&
+		sm.sess.Ping(ctx, nil) != nil {
+
 		sm.sess.Close()
 		sm.sess = nil
 	}
@@ -73,6 +76,7 @@ func (sm *SessionManager) WithSession(ctx context.Context, clnt *mcp.Client,
 	}
 
 	sm.retry = true
+	sm.lastUsed = time.Now()
 	return with(ctx, sm.sess)
 }
 

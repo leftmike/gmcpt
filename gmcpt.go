@@ -1,8 +1,6 @@
 /*
 To Do:
-- prompt test: check the content of the prompt
 - tool command to call a tool
-- SessionManager.WithSession: Ping only if session has been used in longer than 250ms
 */
 package main
 
