@@ -235,30 +235,48 @@ func printPromptList(prompts []*mcp.Prompt, view string) {
 			if prpt.Title != "" {
 				fmt.Printf("    %s\n", prpt.Title)
 			}
-			fmt.Printf("    %s", prpt.Name)
-			if len(prpt.Arguments) > 0 {
-				fmt.Print("(")
-				for i, arg := range prpt.Arguments {
-					if i > 0 {
-						fmt.Print(", ")
+			if view == "summary" {
+				fmt.Printf("    %s", prpt.Name)
+				if len(prpt.Arguments) > 0 {
+					fmt.Print("(")
+					for i, arg := range prpt.Arguments {
+						if i > 0 {
+							fmt.Print(", ")
+						}
+						if arg.Required {
+							fmt.Print(arg.Name)
+						} else {
+							fmt.Printf("[%s]", arg.Name)
+						}
 					}
-					if arg.Required {
-						fmt.Print(arg.Name)
-					} else {
-						fmt.Printf("[%s]", arg.Name)
-					}
+					fmt.Print(")")
 				}
-				fmt.Print(")")
-			}
-			fmt.Println()
-			if prpt.Description != "" {
-				if view == "detailed" {
-					printWithPrefix("    ", prpt.Description, 5)
-				} else { // view == "summary"
+				fmt.Println()
+				if prpt.Description != "" {
 					fmt.Printf("    %s\n", singleLine(prpt.Description, 70))
 				}
+			} else { // view == "detailed"
+				fmt.Printf("    %s\n", prpt.Name)
+				if len(prpt.Arguments) > 0 {
+					for _, arg := range prpt.Arguments {
+						if arg.Required {
+							fmt.Printf("        %s\n", arg.Name)
+						} else {
+							fmt.Printf("        [%s]\n", arg.Name)
+						}
+						if arg.Description != "" {
+							if view == "detailed" {
+								printWithPrefix("        ", arg.Description, 5)
+							} else { // view == "summary"
+								fmt.Printf("        %s\n", singleLine(arg.Description, 60))
+							}
+						}
+					}
+				}
+				if prpt.Description != "" {
+					printWithPrefix("    ", prpt.Description, 5)
+				}
 			}
-			// XXX: prpt.Arguments
 			fmt.Println()
 		}
 	}
@@ -373,7 +391,7 @@ func printToolList(tools []*mcp.Tool, view string) {
 				if required[i] {
 					fmt.Printf("%s %s", args[i], types[i])
 				} else {
-					fmt.Printf("{%s %s}", args[i], types[i])
+					fmt.Printf("[%s %s]", args[i], types[i])
 				}
 			}
 			// XXX tl.OutputSchema
