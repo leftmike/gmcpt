@@ -177,6 +177,45 @@ func clientCmd(cmd string, fs *flag.FlagSet, parse func() []string) {
 		} else {
 			printResource(ret)
 		}
+	} else if cmd == "tool" {
+		if len(args) == 0 {
+			fatalUsage("at least one argument is required", fs)
+		}
+
+		toolArgs := map[string]any{}
+		for _, arg := range args[1:] {
+			key, v, ok := strings.Cut(arg, "=")
+			if !ok {
+				fatalUsage(fmt.Sprintf("argument %s must be key=value", arg), fs)
+			}
+			var val any
+			err := json.Unmarshal([]byte(v), &val)
+			if err != nil {
+				val = v
+			}
+			toolArgs[key] = val
+		}
+
+		var ret *mcp.CallToolResult
+		var err error
+		if url != "" {
+			ret, err = client.CallToolRemote(ctx, url, apiKey, header, sse, args[0], toolArgs)
+		} else {
+			ret, err = client.CallToolLocal(ctx, svrArgs[0], svrArgs[1:], args[0], toolArgs)
+		}
+		if err != nil && ctx.Err() == nil {
+			fatal(err.Error())
+		}
+
+		if jsonFlag {
+			buf, err := json.MarshalIndent(ret, "", "  ")
+			if err != nil {
+				fatal(err.Error())
+			}
+			fmt.Println(string(buf))
+		} else {
+			printTool(ret)
+		}
 	} else {
 		panic(fmt.Sprintf("unexpected command: %s", cmd))
 	}
@@ -460,6 +499,15 @@ func printContent(cnt mcp.Content) {
 		fmt.Println("]")
 	default:
 		fmt.Printf("[unknown content type: %T]\n", cnt)
+	}
+}
+
+func printTool(ret *mcp.CallToolResult) {
+	if ret.IsError {
+		fmt.Println("[error]")
+	}
+	for _, cnt := range ret.Content {
+		printContent(cnt)
 	}
 }
 

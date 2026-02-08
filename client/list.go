@@ -49,8 +49,7 @@ func ListRemote(ctx context.Context, url, apiKey, header string, sse bool,
 	defer sm.Close()
 
 	var lst *ListOutput
-	err := sm.WithSession(ctx,
-		mcp.NewClient(&listImpl, nil),
+	err := sm.WithSession(ctx, mcp.NewClient(&listImpl, nil),
 		func(ctx context.Context, sess *mcp.ClientSession) error {
 			var err error
 			lst, err = list(ctx, sess, lstOpts)

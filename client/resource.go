@@ -35,8 +35,7 @@ func ReadResourceRemote(ctx context.Context, url, apiKey, header string, sse boo
 	defer sm.Close()
 
 	var ret *mcp.ReadResourceResult
-	err := sm.WithSession(ctx,
-		mcp.NewClient(&resourceImpl, nil),
+	err := sm.WithSession(ctx, mcp.NewClient(&resourceImpl, nil),
 		func(ctx context.Context, sess *mcp.ClientSession) error {
 			var err error
 			ret, err = sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})

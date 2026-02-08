@@ -1,7 +1,3 @@
-/*
-To Do:
-- tool command to call a tool
-*/
 package main
 
 import (
@@ -111,7 +107,7 @@ func main() {
 	}
 
 	switch os.Args[1] {
-	case "list", "prompt", "resource":
+	case "list", "prompt", "resource", "tool":
 		clientCmd(os.Args[1], fs, parse)
 	case "proxy":
 		proxyCmd(fs, parseLogger)

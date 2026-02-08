@@ -35,8 +35,7 @@ func GetPromptRemote(ctx context.Context, url, apiKey, header string, sse bool, 
 	defer sm.Close()
 
 	var ret *mcp.GetPromptResult
-	err := sm.WithSession(ctx,
-		mcp.NewClient(&promptImpl, nil),
+	err := sm.WithSession(ctx, mcp.NewClient(&promptImpl, nil),
 		func(ctx context.Context, sess *mcp.ClientSession) error {
 			var err error
 			ret, err = sess.GetPrompt(ctx,

@@ -14,8 +14,7 @@ import (
 
 func newResourceServer() *mcpsvr.MCPServer {
 	tsvr := mcpsvr.NewMCPServer("test-resource-server", "0.1.0",
-		mcpsvr.WithResourceCapabilities(false, false),
-	)
+		mcpsvr.WithResourceCapabilities(false, false))
 
 	tsvr.AddResource(
 		mcpgo.NewResource("file:///config.json", "config.json",

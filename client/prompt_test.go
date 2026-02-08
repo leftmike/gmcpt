@@ -12,9 +12,7 @@ import (
 )
 
 func newPromptServer() *mcpsvr.MCPServer {
-	tsvr := mcpsvr.NewMCPServer("test-prompt-server", "0.1.0",
-		mcpsvr.WithPromptCapabilities(true),
-	)
+	tsvr := mcpsvr.NewMCPServer("test-prompt-server", "0.1.0", mcpsvr.WithPromptCapabilities(true))
 
 	tsvr.AddPrompt(mcpgo.NewPrompt("greet",
 		mcpgo.WithPromptDescription("generates a greeting"),
