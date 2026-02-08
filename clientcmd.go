@@ -359,6 +359,23 @@ func printResourceList(resources []*mcp.Resource, view string) {
 	}
 }
 
+func schemaToType(sch any) string {
+	if schema, ok := sch.(map[string]any); ok {
+		if typ, ok := schema["type"].(string); ok {
+			if typ == "array" {
+				if items, ok := schema["items"].(map[string]any); ok {
+					if s, ok := items["type"].(string); ok {
+						return s + "[]"
+					}
+				}
+			}
+			return typ
+		}
+	}
+
+	return "any"
+}
+
 func schemaToArgs(sch any) ([]string, []string, []bool) {
 	schema, ok := sch.(map[string]any)
 	if !ok {
@@ -374,21 +391,7 @@ func schemaToArgs(sch any) ([]string, []string, []bool) {
 	types := make([]string, 0, len(props))
 	for k, v := range props {
 		names = append(names, k)
-
-		typ := "any"
-		if val, ok := v.(map[string]any); ok {
-			if s, ok := val["type"].(string); ok {
-				typ = s
-				if s == "array" {
-					if items, ok := val["items"].(map[string]any); ok {
-						if s, ok := items["type"].(string); ok {
-							typ = s + "[]"
-						}
-					}
-				}
-			}
-		}
-		types = append(types, typ)
+		types = append(types, schemaToType(v))
 	}
 
 	required := make([]bool, len(names))
@@ -435,8 +438,11 @@ func printToolList(tools []*mcp.Tool, view string) {
 					fmt.Printf("[%s %s]", args[i], types[i])
 				}
 			}
-			// XXX tl.OutputSchema
-			fmt.Println(")")
+			fmt.Print(")")
+			if typ := schemaToType(tl.OutputSchema); typ != "" {
+				fmt.Printf(" -> %s", typ)
+			}
+			fmt.Println()
 			if view == "summary" {
 				if tl.Description != "" {
 					fmt.Printf("    %s\n", singleLine(tl.Description, 70))
