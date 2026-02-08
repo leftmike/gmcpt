@@ -153,21 +153,18 @@ func clientCmd(cmd string, fs *flag.FlagSet, parse func() []string) {
 			printPrompt(ret)
 		}
 	} else if cmd == "resource" {
-		if resource == "" && len(args) == 0 {
-			fatalUsage("-resource or at least one argument is required", fs)
+		if len(args) == 1 && resource == "" {
+			resource = args[0]
+		} else if len(args) > 0 || resource == "" {
+			fatalUsage("-resource or one argument is required", fs)
 		}
 
-		if resource != "" {
-			args = append([]string{resource}, args...)
-		}
-
-		// XXX: for _, arg := range args {
 		var ret *mcp.ReadResourceResult
 		var err error
 		if url != "" {
-			ret, err = client.ReadResourceRemote(ctx, url, apiKey, header, sse, args[0])
+			ret, err = client.ReadResourceRemote(ctx, url, apiKey, header, sse, resource)
 		} else {
-			ret, err = client.ReadResourceLocal(ctx, svrArgs[0], svrArgs[1:], args[0])
+			ret, err = client.ReadResourceLocal(ctx, svrArgs[0], svrArgs[1:], resource)
 		}
 		if err != nil && ctx.Err() == nil {
 			fatal(err.Error())
