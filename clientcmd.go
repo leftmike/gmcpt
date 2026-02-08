@@ -124,9 +124,14 @@ func clientCmd(cmd string, fs *flag.FlagSet, parse func() []string) {
 
 		promptArgs := map[string]string{
 			"type": "object",
-			// XXX: need arguments
 		}
-		// XXX: for _, arg := range args {
+		for _, arg := range args[1:] {
+			key, val, ok := strings.Cut(arg, "=")
+			if !ok {
+				fatalUsage(fmt.Sprintf("argument %s must be key=value", arg), fs)
+			}
+			promptArgs[key] = val
+		}
 		var ret *mcp.GetPromptResult
 		var err error
 		if url != "" {
