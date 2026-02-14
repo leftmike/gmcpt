@@ -1,3 +1,7 @@
+/*
+To Do:
+- tool_test: https://github.com/leftmike/research/blob/main/mcplist/successful_servers.txt
+*/
 package main
 
 import (
