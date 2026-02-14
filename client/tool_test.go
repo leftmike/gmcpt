@@ -89,19 +89,19 @@ func TestCallToolRemoteServers(t *testing.T) {
 			url:   "https://hf.co/mcp",
 			tool:  "model_search",
 			args:  map[string]any{"query": "gpt2", "limit": 1},
-			text:  "Showing first 1 models matching query \"gpt2\":\n\n## openai-community/gpt2-large\n\n**Task:** text-generation | **Library:** ",
+			text:  "Showing first 1 models matching query \"gpt2\":\n\n## openai-community/gpt2\n\n**Task:** text-generation | **Library:** transf",
 		},
 		{
 			url:  "https://hf.co/mcp",
 			tool: "paper_search",
 			args: map[string]any{"query": "attention is all you need", "limit": 1},
-			text: "75 papers matched the query 'attention is all you need'. Here are the first 12 results.\n\n---\n\n## Attention Is All You Ne",
+			text: "76 papers matched the query 'attention is all you need'. Here are the first 12 results.\n\n---\n\n## Attention Is All You Ne",
 		},
 		{
 			url:  "https://hf.co/mcp",
 			tool: "dataset_search",
 			args: map[string]any{"query": "squad", "limit": 1},
-			text: "Showing first 1 datasets matching query \"squad\":\n\n## rajpurkar/squad\n\n\n\t\n\t\t\n\t\tDataset Card for SQuAD\n\t\n\n\n\t\n\t\t\n\t\tDataset ",
+			text: "Showing first 1 datasets matching query \"squad\":\n\n## iapp/iapp_wiki_qa_squad\n\n`iapp_wiki_qa_squad` is an extractive ques",
 		},
 	}
 
