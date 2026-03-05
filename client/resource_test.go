@@ -157,7 +157,7 @@ var (
     "id": "company_research_exa",
     "name": "Company Research",
     "description": "Research companies and organizations",
-    "enabled": true
+    "enabled": false
   },
   {
     "id": "crawling_exa",
@@ -187,6 +187,12 @@ var (
     "id": "linkedin_search_exa",
     "name": "LinkedIn Search (Deprecated)",
     "description": "Deprecated: Use people_search_exa instead",
+    "enabled": false
+  },
+  {
+    "id": "deep_search_exa",
+    "name": "Deep Search",
+    "description": "Deep search with query expansion and synthesized answers (requires API key)",
     "enabled": false
   }
 ]`,

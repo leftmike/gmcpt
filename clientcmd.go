@@ -199,11 +199,15 @@ func clientCmd(cmd string, fs *flag.FlagSet, parse func() []string) {
 		}
 
 		var ret *mcp.CallToolResult
+		var cmr *mcp.CreateMessageRequest
+		var er *mcp.ElicitRequest
 		var err error
 		if url != "" {
-			ret, err = client.CallToolRemote(ctx, url, apiKey, header, sse, args[0], toolArgs)
+			ret, cmr, er, err = client.CallToolRemote(ctx, url, apiKey, header, sse, args[0],
+				toolArgs)
 		} else {
-			ret, err = client.CallToolLocal(ctx, svrArgs[0], svrArgs[1:], args[0], toolArgs)
+			ret, cmr, er, err = client.CallToolLocal(ctx, svrArgs[0], svrArgs[1:], args[0],
+				toolArgs)
 		}
 		if err != nil && ctx.Err() == nil {
 			fatal(err.Error())
@@ -216,7 +220,7 @@ func clientCmd(cmd string, fs *flag.FlagSet, parse func() []string) {
 			}
 			fmt.Println(string(buf))
 		} else {
-			printTool(ret)
+			printTool(ret, cmr, er)
 		}
 	} else {
 		panic(fmt.Sprintf("unexpected command: %s", cmd))
@@ -510,12 +514,43 @@ func printContent(cnt mcp.Content) {
 	}
 }
 
-func printTool(ret *mcp.CallToolResult) {
+func printTool(ret *mcp.CallToolResult, cmr *mcp.CreateMessageRequest, er *mcp.ElicitRequest) {
 	if ret.IsError {
 		fmt.Println("[error]")
 	}
 	for _, cnt := range ret.Content {
 		printContent(cnt)
+	}
+	if cmr != nil {
+		fmt.Println("[summarization]")
+		if cmr.Params.IncludeContext != "" {
+			fmt.Printf("include context: %s\n", cmr.Params.IncludeContext)
+		}
+		fmt.Printf("max tokens: %d\n", cmr.Params.MaxTokens)
+		for _, msg := range cmr.Params.Messages {
+			if cnt, ok := msg.Content.(*mcp.TextContent); ok {
+				fmt.Printf("%s: %s\n", msg.Role, strings.TrimSpace(cnt.Text))
+			}
+		}
+		if len(cmr.Params.StopSequences) > 0 {
+			fmt.Printf("stop sequences: %v\n", cmr.Params.StopSequences)
+		}
+		if cmr.Params.SystemPrompt != "" {
+			fmt.Printf("system prompt: %s\n", cmr.Params.SystemPrompt)
+		}
+	}
+	if er != nil {
+		fmt.Println("[elicitation]")
+		fmt.Printf("message: %s\n", er.Params.Message)
+		if er.Params.RequestedSchema != nil {
+			fmt.Printf("schema: %s\n", schemaToType(er.Params.RequestedSchema))
+		}
+		if er.Params.URL != "" {
+			fmt.Printf("url: %s\n", er.Params.URL)
+		}
+		if er.Params.ElicitationID != "" {
+			fmt.Printf("elicitation id: %s\n", er.Params.ElicitationID)
+		}
 	}
 }
 

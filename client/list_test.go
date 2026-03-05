@@ -191,13 +191,13 @@ func TestListRemoteServers(t *testing.T) {
 			url:       "https://mcp.exa.ai/mcp",
 			prompts:   []string{"code_search_help", "web_search_help"},
 			resources: []string{"tools_list"},
-			tools:     []string{"company_research_exa", "get_code_context_exa", "web_search_exa"},
+			tools:     []string{"get_code_context_exa", "web_search_exa"},
 		},
 		{
 			url:     "https://hf.co/mcp",
 			prompts: []string{"Dataset Details", "Model Details", "Paper Summary", "User Summary"},
-			tools: []string{"dataset_search", "gr1_z_image_turbo_generate", "hf_doc_fetch",
-				"hf_doc_search", "hf_whoami", "hub_repo_details", "model_search", "paper_search",
+			tools: []string{"gr1_z_image_turbo_generate", "hf_doc_fetch", "hf_doc_search",
+				"hf_whoami", "hub_repo_details", "hub_repo_search", "paper_search",
 				"space_search"},
 		},
 		{
