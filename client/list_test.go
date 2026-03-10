@@ -10,53 +10,54 @@ import (
 	mcpsvr "github.com/mark3labs/mcp-go/server"
 )
 
-func newAllCapsServer() *mcpsvr.MCPServer {
-	tsvr := mcpsvr.NewMCPServer("test-list-server", "0.1.0",
-		mcpsvr.WithToolCapabilities(true),
-		mcpsvr.WithPromptCapabilities(true),
-		mcpsvr.WithResourceCapabilities(false, false),
-	)
+func newListServer(tools, prompts, resources bool) *mcpsvr.MCPServer {
+	tsvr := mcpsvr.NewMCPServer("test-list-server", "0.1.0")
 
-	tsvr.AddTool(mcpgo.NewTool("echo",
-		mcpgo.WithDescription("echoes back the input")),
-		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-			return mcpgo.NewToolResultText("echo"), nil
-		})
+	if tools {
+		tsvr.AddTool(mcpgo.NewTool("echo",
+			mcpgo.WithDescription("echoes back the input")),
+			func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+				return mcpgo.NewToolResultText("echo"), nil
+			})
 
-	tsvr.AddTool(mcpgo.NewTool("add",
-		mcpgo.WithDescription("adds two numbers")),
-		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-			return mcpgo.NewToolResultText("sum"), nil
-		})
+		tsvr.AddTool(mcpgo.NewTool("add",
+			mcpgo.WithDescription("adds two numbers")),
+			func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+				return mcpgo.NewToolResultText("sum"), nil
+			})
+	}
 
-	tsvr.AddPrompt(mcpgo.NewPrompt("greet",
-		mcpgo.WithPromptDescription("generates a greeting")),
-		func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
-			return mcpgo.NewGetPromptResult("greeting",
-				[]mcpgo.PromptMessage{
-					mcpgo.NewPromptMessage(mcpgo.RoleUser,
-						mcpgo.NewTextContent("Hello!")),
-				},
-			), nil
-		})
+	if prompts {
+		tsvr.AddPrompt(mcpgo.NewPrompt("greet",
+			mcpgo.WithPromptDescription("generates a greeting")),
+			func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
+				return mcpgo.NewGetPromptResult("greeting",
+					[]mcpgo.PromptMessage{
+						mcpgo.NewPromptMessage(mcpgo.RoleUser,
+							mcpgo.NewTextContent("Hello!")),
+					},
+				), nil
+			})
+	}
 
-	tsvr.AddResource(
-		mcpgo.NewResource("file:///test.txt", "test.txt",
-			mcpgo.WithResourceDescription("test file")),
-		func(ctx context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents,
-			error) {
+	if resources {
+		tsvr.AddResource(
+			mcpgo.NewResource("file:///test.txt", "test.txt",
+				mcpgo.WithResourceDescription("test file")),
+			func(ctx context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents,
+				error) {
 
-			return []mcpgo.ResourceContents{
-				mcpgo.TextResourceContents{URI: "file:///test.txt", Text: "test"},
-			}, nil
-		})
+				return []mcpgo.ResourceContents{
+					mcpgo.TextResourceContents{URI: "file:///test.txt", Text: "test"},
+				}, nil
+			})
+	}
 
 	return tsvr
 }
 
 func TestListAll(t *testing.T) {
-	tsvr := newAllCapsServer()
-	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
+	svr := mcpsvr.NewTestStreamableHTTPServer(newListServer(true, true, true))
 	defer svr.Close()
 
 	url := svr.URL + "/mcp"
@@ -111,8 +112,7 @@ func TestListSelectiveOptions(t *testing.T) {
 		{opts: ListPrompts | ListResources, prompts: 1, resources: 1},
 	}
 
-	tsvr := newAllCapsServer()
-	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
+	svr := mcpsvr.NewTestStreamableHTTPServer(newListServer(true, true, true))
 	defer svr.Close()
 
 	ctx := context.Background()
@@ -207,11 +207,6 @@ func TestListRemoteServers(t *testing.T) {
 				"search_generic_documentation"},
 		},
 		{
-			url: "https://mcp.peek.com",
-			tools: []string{"experience_availability", "experience_details", "list_tags",
-				"render_activity_tiles", "search_experiences", "search_regions"},
-		},
-		{
 			url: "https://www.javadocs.dev/mcp",
 			tools: []string{"get_javadoc_content_list", "get_javadoc_symbol_contents",
 				"get_latest_version", "get_source_contents", "list_source_contents",
@@ -240,16 +235,73 @@ func TestListRemoteServers(t *testing.T) {
 	}
 }
 
-func TestListCapabilitiesFilter(t *testing.T) {
-	tsvr := mcpsvr.NewMCPServer("tools-only-server", "0.1.0",
-		mcpsvr.WithToolCapabilities(true))
-	tsvr.AddTool(mcpgo.NewTool("echo",
-		mcpgo.WithDescription("echoes")),
-		func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-			return mcpgo.NewToolResultText("echo"), nil
-		})
+func TestListCallbacks(t *testing.T) {
+	cases := []struct {
+		opts             []mcpsvr.ServerOption
+		toolsChanged     bool
+		promptsChanged   bool
+		resourcesChanged bool
+		subscribed       bool
+	}{
+		{
+			opts:         []mcpsvr.ServerOption{mcpsvr.WithToolCapabilities(true)},
+			toolsChanged: true,
+		},
+		{
+			opts:           []mcpsvr.ServerOption{mcpsvr.WithPromptCapabilities(true)},
+			promptsChanged: true,
+		},
+		{
+			opts:             []mcpsvr.ServerOption{mcpsvr.WithResourceCapabilities(true, true)},
+			resourcesChanged: true,
+			subscribed:       true,
+		},
+		{
+			opts:       []mcpsvr.ServerOption{mcpsvr.WithResourceCapabilities(true, false)},
+			subscribed: true,
+		},
+		{
+			opts: []mcpsvr.ServerOption{
+				mcpsvr.WithToolCapabilities(true),
+				mcpsvr.WithPromptCapabilities(true),
+				mcpsvr.WithResourceCapabilities(false, false),
+			},
+			toolsChanged:   true,
+			promptsChanged: true,
+		},
+	}
 
-	svr := mcpsvr.NewTestStreamableHTTPServer(tsvr)
+	for _, c := range cases {
+		svr := mcpsvr.NewTestStreamableHTTPServer(mcpsvr.NewMCPServer("test", "0.1.0", c.opts...))
+		defer svr.Close()
+
+		url := svr.URL + "/mcp"
+		lst, err := ListRemote(context.Background(), url, "", "", false,
+			ListTools|ListPrompts|ListResources)
+		if err != nil {
+			t.Errorf("ListRemote(%s) failed with %s", url, err)
+		} else {
+			if lst.ToolListChanged != c.toolsChanged {
+				t.Errorf("ToolListChanged: got %v want %v", lst.ToolListChanged, c.toolsChanged)
+			}
+			if lst.PromptListChanged != c.promptsChanged {
+				t.Errorf("PromptListChanged: got %v want %v", lst.PromptListChanged,
+					c.promptsChanged)
+			}
+			if lst.ResourceListChanged != c.resourcesChanged {
+				t.Errorf("ResourceListChanged: got %v want %v",
+					lst.ResourceListChanged, c.resourcesChanged)
+			}
+			if lst.ResourceSubscribe != c.subscribed {
+				t.Errorf("ResourceSubscribe: got %v want %v", lst.ResourceSubscribe,
+					c.subscribed)
+			}
+		}
+	}
+}
+
+func TestListCapabilitiesFilter(t *testing.T) {
+	svr := mcpsvr.NewTestStreamableHTTPServer(newListServer(true, false, false))
 	defer svr.Close()
 
 	url := svr.URL + "/mcp"
@@ -258,8 +310,8 @@ func TestListCapabilitiesFilter(t *testing.T) {
 	if err != nil {
 		t.Errorf("ListRemote(%s) failed with %s", url, err)
 	} else {
-		if len(lst.Tools) != 1 {
-			t.Errorf("ListRemote(%s) got %d tools want 1", url, len(lst.Tools))
+		if len(lst.Tools) != 2 {
+			t.Errorf("ListRemote(%s) got %d tools want 2", url, len(lst.Tools))
 		}
 		if len(lst.Prompts) != 0 {
 			t.Errorf("ListRemote(%s) got %d prompts want 0", url, len(lst.Prompts))

@@ -17,9 +17,15 @@ const (
 )
 
 type ListOutput struct {
-	Prompts   []*mcp.Prompt   `json:"prompts,omitempty"`
-	Resources []*mcp.Resource `json:"resources,omitempty"`
-	Tools     []*mcp.Tool     `json:"tools,omitempty"`
+	Prompts             []*mcp.Prompt   `json:"prompts,omitempty"`
+	Resources           []*mcp.Resource `json:"resources,omitempty"`
+	Tools               []*mcp.Tool     `json:"tools,omitempty"`
+	ToolListChanged     bool            `json:"tool_list_changed,omitempty"`
+	PromptListChanged   bool            `json:"prompt_list_changed,omitempty"`
+	ResourceListChanged bool            `json:"resource_list_changed,omitempty"`
+	ResourceSubscribe   bool            `json:"resource_subscribe,omitempty"`
+	Logging             bool            `json:"logging,omitempty"`
+	Completions         bool            `json:"completions,omitempty"`
 }
 
 var (
@@ -61,6 +67,23 @@ func ListRemote(ctx context.Context, url, apiKey, header string, sse bool,
 func list(ctx context.Context, sess *mcp.ClientSession, lstOpts ListOptions) (*ListOutput, error) {
 	ir := sess.InitializeResult()
 	var lst ListOutput
+
+	if ir.Capabilities.Tools != nil {
+		lst.ToolListChanged = ir.Capabilities.Tools.ListChanged
+	}
+	if ir.Capabilities.Prompts != nil {
+		lst.PromptListChanged = ir.Capabilities.Prompts.ListChanged
+	}
+	if ir.Capabilities.Resources != nil {
+		lst.ResourceListChanged = ir.Capabilities.Resources.ListChanged
+		lst.ResourceSubscribe = ir.Capabilities.Resources.Subscribe
+	}
+	if ir.Capabilities.Logging != nil {
+		lst.Logging = true
+	}
+	if ir.Capabilities.Completions != nil {
+		lst.Completions = true
+	}
 
 	if lstOpts&ListPrompts != 0 && ir.Capabilities.Prompts != nil {
 		ret, err := sess.ListPrompts(ctx, nil)

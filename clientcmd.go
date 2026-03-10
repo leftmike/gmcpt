@@ -112,6 +112,7 @@ func clientCmd(cmd string, fs *flag.FlagSet, parse func() []string) {
 			if lstOpts&client.ListTools != 0 {
 				printToolList(lst.Tools, view)
 			}
+			printCallbacks(lst)
 		}
 	} else if cmd == "prompt" {
 		if prompt == "" && len(args) == 0 {
@@ -471,6 +472,30 @@ func printToolList(tools []*mcp.Tool, view string) {
 			fmt.Println()
 		}
 	}
+}
+
+func printCallbacks(lst *client.ListOutput) {
+	var callbacks []string
+	if lst.ToolListChanged {
+		callbacks = append(callbacks, "tools/list_changed")
+	}
+	if lst.PromptListChanged {
+		callbacks = append(callbacks, "prompts/list_changed")
+	}
+	if lst.ResourceListChanged {
+		callbacks = append(callbacks, "resources/list_changed")
+	}
+	if lst.ResourceSubscribe {
+		callbacks = append(callbacks, "resources/subscribe")
+	}
+	if lst.Logging {
+		callbacks = append(callbacks, "logging")
+	}
+	if lst.Completions {
+		callbacks = append(callbacks, "completions")
+	}
+	fmt.Println("---- Callbacks ----")
+	fmt.Printf("    %s\n", strings.Join(callbacks, ", "))
 }
 
 func printPrompt(ret *mcp.GetPromptResult) {
