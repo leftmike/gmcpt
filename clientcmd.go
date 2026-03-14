@@ -413,6 +413,30 @@ func schemaToArgs(sch any) ([]string, []string, []bool) {
 	return names, types, required
 }
 
+func toolAnnotations(ta *mcp.ToolAnnotations) string {
+	if ta == nil {
+		return ""
+	}
+
+	var hints []string
+	if ta.ReadOnlyHint {
+		hints = append(hints, "read-only")
+	}
+	if ta.DestructiveHint != nil && !*ta.DestructiveHint {
+		hints = append(hints, "non-destructive")
+	}
+	if ta.IdempotentHint {
+		hints = append(hints, "idempotent")
+	}
+	if ta.OpenWorldHint != nil && !*ta.OpenWorldHint {
+		hints = append(hints, "closed-world")
+	}
+	if len(hints) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("[%s]", strings.Join(hints, ", "))
+}
+
 func printToolList(tools []*mcp.Tool, view string) {
 	fmt.Println("---- Tools ----")
 	for _, tl := range tools {
@@ -448,6 +472,9 @@ func printToolList(tools []*mcp.Tool, view string) {
 				fmt.Printf(" -> %s", typ)
 			}
 			fmt.Println()
+			if hints := toolAnnotations(tl.Annotations); hints != "" {
+				fmt.Printf("    %s\n", hints)
+			}
 			if view == "summary" {
 				if tl.Description != "" {
 					fmt.Printf("    %s\n", singleLine(tl.Description, 70))
